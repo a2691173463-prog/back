@@ -343,11 +343,11 @@
             <el-option label="通用" value="通用" />
           </el-select>
         </el-form-item>
-        <el-form-item label="缩略图链接地址 (URL)" required>
-          <el-input v-model="templateForm.thumbnailUrl" placeholder="请输入缩略图图片地址..." />
+        <el-form-item label="缩略图链接地址 (可选)">
+          <el-input v-model="templateForm.thumbnailUrl" placeholder="留空时使用系统内置 A4 预览" />
         </el-form-item>
-        <el-form-item label="下载文件链接地址 (URL)" required>
-          <el-input v-model="templateForm.downloadUrl" placeholder="请输入 Word/Markdown 文件下载链接..." />
+        <el-form-item label="下载文件链接地址 (可选)">
+          <el-input v-model="templateForm.downloadUrl" placeholder="留空时用户仍可在线制作并导出 PDF" />
         </el-form-item>
         <el-form-item label="模板简短描述">
           <el-input type="textarea" :rows="2" v-model="templateForm.description" placeholder="请输入简短介绍，方便用户挑选..." />
@@ -513,15 +513,15 @@ const fetchTemplates = async () => {
 const openTemplateForm = () => {
   templateForm.name = ''
   templateForm.category = ''
-  templateForm.thumbnailUrl = 'https://img.icons8.com/color/144/resume.png' // 默认好看的图标
+  templateForm.thumbnailUrl = ''
   templateForm.downloadUrl = ''
   templateForm.description = ''
   templateFormVisible.value = true
 }
 
 const saveTemplate = async () => {
-  if (!templateForm.name || !templateForm.category || !templateForm.thumbnailUrl || !templateForm.downloadUrl) {
-    ElMessage.warning('请填写所有必填字段')
+  if (!templateForm.name || !templateForm.category) {
+    ElMessage.warning('请填写模板名称和类型')
     return
   }
   submitLoading.value = true

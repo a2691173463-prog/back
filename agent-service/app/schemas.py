@@ -57,6 +57,12 @@ class ResumeDiagnosisRequest(BaseModel):
     image_mime_type: str = "image/png"
 
 
+class ResumeOptimizationRequest(BaseModel):
+    section_type: str = Field(default="项目经历", max_length=32)
+    target_role: str = Field(default="校招岗位", max_length=100)
+    content: str = Field(min_length=1, max_length=6000)
+
+
 class InterviewSummaryRequest(BaseModel):
     round_content: str
     existing_summary: str | None = None

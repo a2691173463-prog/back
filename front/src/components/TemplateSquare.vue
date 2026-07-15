@@ -79,7 +79,7 @@
           </div>
           <div class="card-actions">
             <el-button :icon="Download" @click="downloadTemplate(item)">下载模板</el-button>
-            <el-button type="primary" :icon="ArrowRight" @click="useTemplate">使用模板</el-button>
+            <el-button type="primary" :icon="ArrowRight" @click="useTemplate(item)">在线制作</el-button>
           </div>
         </div>
       </article>
@@ -145,10 +145,21 @@
           </div>
           <div class="preview-actions">
             <el-button :icon="Download" @click="downloadTemplate(selectedTemplate)">下载 Word</el-button>
-            <el-button type="primary" :icon="ArrowRight" @click="useTemplate">上传简历并诊断</el-button>
+            <el-button type="primary" :icon="ArrowRight" @click="useTemplate(selectedTemplate)">使用此模板</el-button>
           </div>
         </aside>
       </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="editorVisible"
+      class="resume-builder-dialog"
+      fullscreen
+      :show-close="false"
+      destroy-on-close
+      append-to-body
+    >
+      <ResumeBuilder v-if="selectedTemplate" :template="selectedTemplate" @close="editorVisible = false" />
     </el-dialog>
   </section>
 </template>
@@ -158,6 +169,7 @@ import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Check, Download, Refresh, Search, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import ResumeBuilder from './ResumeBuilder.vue'
 
 interface ResumeTemplate {
   id: number
@@ -169,7 +181,6 @@ interface ResumeTemplate {
   createTime?: string
 }
 
-const emit = defineEmits<{ (event: 'go-to-diagnose'): void }>()
 const ALL_CATEGORIES = '全部岗位'
 const PAGE_SIZE = 9
 
@@ -181,6 +192,7 @@ const sortBy = ref('latest')
 const currentPage = ref(1)
 const previewVisible = ref(false)
 const selectedTemplate = ref<ResumeTemplate | null>(null)
+const editorVisible = ref(false)
 const failedImages = ref(new Set<number>())
 
 const categories = computed(() => [
@@ -255,9 +267,11 @@ const downloadTemplate = (item: ResumeTemplate) => {
   window.open(item.downloadUrl, '_blank', 'noopener,noreferrer')
 }
 
-const useTemplate = () => {
+const useTemplate = (item: ResumeTemplate | null) => {
+  if (!item) return
+  selectedTemplate.value = item
   previewVisible.value = false
-  emit('go-to-diagnose')
+  editorVisible.value = true
 }
 
 const resetFilters = () => {
@@ -798,5 +812,20 @@ onMounted(fetchTemplates)
   .card-actions {
     grid-template-columns: 1fr;
   }
+}
+</style>
+
+<style>
+.resume-builder-dialog.el-dialog {
+  padding: 0;
+  background: #f1f3f5;
+}
+
+.resume-builder-dialog .el-dialog__header {
+  display: none;
+}
+
+.resume-builder-dialog .el-dialog__body {
+  padding: 0;
 }
 </style>

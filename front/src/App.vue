@@ -339,7 +339,7 @@
 
         <!-- TAB 5: 模板广场 -->
         <div v-else-if="activeTab === 'templates'" class="tab-content">
-          <TemplateSquare @go-to-diagnose="switchTab('workspace')" />
+          <TemplateSquare />
         </div>
 
         <!-- TAB 6: 管理后台 -->

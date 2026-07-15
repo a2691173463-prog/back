@@ -50,6 +50,15 @@ public class PythonAgentClient implements AiClient {
         return postForContent("/resume/diagnose", body);
     }
 
+    @Override
+    public String optimizeResumeSection(String sectionType, String targetRole, String content) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("section_type", sectionType);
+        body.put("target_role", targetRole);
+        body.put("content", content);
+        return postForContent("/resume/optimize", body);
+    }
+
     public String summarizeInterview(String roundContent, String existingSummary, int maxChars) {
         Map<String, Object> body = new HashMap<>();
         body.put("round_content", roundContent == null ? "" : roundContent);

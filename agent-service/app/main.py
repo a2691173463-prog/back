@@ -19,6 +19,7 @@ from app.schemas import (
     InterviewEvaluationRequest,
     InterviewSummaryRequest,
     ResumeDiagnosisRequest,
+    ResumeOptimizationRequest,
     SummaryRequest,
     VisionRequest,
 )
@@ -145,6 +146,17 @@ def diagnose_resume(request: ResumeDiagnosisRequest) -> ChatResponse:
             request.parsed_text,
             request.image_base64,
             request.image_mime_type,
+        )
+    )
+
+
+@app.post("/resume/optimize", response_model=ChatResponse)
+def optimize_resume(request: ResumeOptimizationRequest) -> ChatResponse:
+    return ChatResponse(
+        content=llm_client.optimize_resume_section(
+            request.section_type,
+            request.target_role,
+            request.content,
         )
     )
 

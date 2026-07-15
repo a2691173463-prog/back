@@ -82,6 +82,22 @@ def resume_diagnosis(parsed_text: str, image_base64: str | None, image_mime_type
     return chat([ChatMessage(role="user", content=prompt)])
 
 
+def optimize_resume_section(section_type: str, target_role: str, content: str) -> str:
+    prompt = (
+        "你是校招简历内容编辑专家。请优化下面的简历段落，使其更适合目标岗位，"
+        "突出行动、技术方案、结果和个人贡献。\n"
+        "硬性要求：\n"
+        "1. 不得虚构原文没有出现的公司、项目、技术、数字或成果；\n"
+        "2. 信息不足时保留真实表达，不要擅自补造量化数据；\n"
+        "3. 使用简洁的中文简历语言，优先采用动词开头；\n"
+        "4. 只输出优化后的正文，不要解释、标题、Markdown 代码块或客套话。\n\n"
+        f"目标岗位：{target_role or '校招岗位'}\n"
+        f"内容类型：{section_type or '项目经历'}\n"
+        f"原始内容：\n{content.strip()}"
+    )
+    return chat([ChatMessage(role="user", content=prompt)]).strip()
+
+
 def summarize_interview(round_content: str, existing_summary: str | None, max_chars: int = 150) -> str:
     if existing_summary:
         prompt = (

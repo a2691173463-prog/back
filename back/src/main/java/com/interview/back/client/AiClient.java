@@ -24,6 +24,8 @@ public interface AiClient {
 
     String diagnoseResume(String parsedText, String imageBase64, String imageMimeType);
 
+    String optimizeResumeSection(String sectionType, String targetRole, String content);
+
     String summarizeInterview(String roundContent, String existingSummary, int maxChars);
 
     String evaluateInterview(List<Map<String, Object>> messages);
