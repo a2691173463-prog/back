@@ -25,13 +25,15 @@
 
 启动 MySQL、Redis 和 RabbitMQ，然后执行 [back/sql/schema.sql](back/sql/schema.sql) 初始化数据库。
 
-Java 后端通过环境变量读取本地敏感配置。在 PowerShell 中设置：
+Java 后端会自动读取 `back/.env`。首次运行时创建本地配置：
 
 ```powershell
-$env:DB_USERNAME="root"
-$env:DB_PASSWORD="你的数据库密码"
-$env:AI_INTERNAL_SECRET="请替换为随机共享密钥"
+cd back
+Copy-Item .env.example .env
+# 编辑 .env，填写数据库密码
 ```
+
+也可以继续使用 PowerShell 环境变量；系统环境变量的优先级高于 `.env`。
 
 ### 2. Python Agent 服务
 

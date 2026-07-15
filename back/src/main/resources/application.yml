@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: back
+  config:
+    import:
+      # Support running from either the back directory or the repository root.
+      - optional:file:./.env[.properties]
+      - optional:file:./back/.env[.properties]
   datasource:
     url: jdbc:mysql://localhost:3306/interview_db?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
     username: ${DB_USERNAME:root}
@@ -26,8 +31,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 ai:
-  # Java 后端只负责业务编排，所有大模型调用统一转发给 Python agent-service。
-  # 启动方式：cd D:\简历项目\agent-service; powershell -ExecutionPolicy Bypass -File .\start.ps1
+  # Java handles business orchestration; model requests are delegated to Python.
   python-agent:
     base-url: http://localhost:8000
     timeout-seconds: 120
