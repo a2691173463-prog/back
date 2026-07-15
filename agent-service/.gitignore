@@ -1,0 +1,10 @@
+.venv/
+.uv-cache/
+.uv-cache-new/
+data/
+__pycache__/
+*.py[cod]
+.env
+*.log
+.pytest_cache/
+.ruff_cache/

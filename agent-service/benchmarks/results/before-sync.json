@@ -1,0 +1,22 @@
+{
+  "label": "before-sync",
+  "url": "http://127.0.0.1:18001/llm/chat/stream",
+  "requests": 100,
+  "concurrency": 50,
+  "successful": 100,
+  "failed": 0,
+  "success_rate_percent": 100.0,
+  "wall_seconds": 1.764,
+  "throughput_requests_per_second": 56.705,
+  "ttft_ms": {
+    "average": 252.45,
+    "p50": 233.02,
+    "p95": 400.46
+  },
+  "total_latency_ms": {
+    "average": 825.7,
+    "p50": 795.18,
+    "p95": 981.57
+  },
+  "errors": []
+}

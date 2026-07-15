@@ -1,0 +1,46 @@
+# Secrets and local configuration
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
+# Python
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.uv-cache*/
+.uv-cache-codex/
+agent-service/data/
+agent-service/.langgraph_api/
+
+# Java
+**/target/
+**/*.class
+
+# Frontend
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/*.local
+
+# Runtime and private user data
+**/uploads/
+**/*.sqlite
+**/*.sqlite-*
+**/*.db
+**/*.log
+
+# IDE, operating system and local agent files
+.idea/
+**/.idea/
+.vscode/
+**/.vscode/
+.DS_Store
+Thumbs.db
+.agents/
+.codex/
