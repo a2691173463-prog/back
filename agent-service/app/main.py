@@ -7,10 +7,12 @@ from fastapi.responses import StreamingResponse
 
 from app import llm_client
 from app import interview_agent
+from app import knowledge_base
 from app.config import settings
 from app.observability import tracing_enabled
 from app.schemas import (
     AgentChatRequest,
+    AgentFinalizeRequest,
     AgentThreadRequest,
     ChatRequest,
     ChatResponse,
@@ -18,6 +20,7 @@ from app.schemas import (
     EvaluationResponse,
     InterviewEvaluationRequest,
     InterviewSummaryRequest,
+    KnowledgeDocumentRequest,
     ResumeDiagnosisRequest,
     ResumeOptimizationRequest,
     SummaryRequest,
@@ -46,7 +49,8 @@ def health() -> dict[str, str | bool]:
         "model": settings.model_name,
         "api_key_configured": bool(settings.model_api_key),
         "langgraph": "explicit-state-graph",
-        "checkpointer": "sqlite",
+        "checkpointer": settings.checkpoint_backend,
+        "rag": "pgvector+pg_trgm+rerank",
         "langsmith_tracing": tracing_enabled(),
     }
 
@@ -98,6 +102,8 @@ async def initialize_agent_thread(request: AgentThreadRequest) -> dict[str, str]
         request.thread_id,
         request.system_prompt,
         request.greeting,
+        request.interview_mode,
+        request.position_code,
     )
     return {"status": "initialized", "thread_id": request.thread_id}
 
@@ -121,6 +127,8 @@ async def interview_stream(request: AgentChatRequest) -> StreamingResponse:
                 request.thread_id,
                 request.user_id,
                 request.resume_id,
+                request.interview_mode,
+                request.position_code,
                 request.message,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -134,6 +142,18 @@ async def interview_stream(request: AgentChatRequest) -> StreamingResponse:
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.post("/agent/interview/finalize", response_model=EvaluationResponse)
+async def finalize_interview(request: AgentFinalizeRequest) -> EvaluationResponse:
+    report = await interview_agent.finalize_thread(
+        request.thread_id,
+        request.user_id,
+        request.resume_id,
+        request.interview_mode,
+        request.position_code,
+    )
+    return EvaluationResponse.model_validate(report)
+
+
 @app.post("/llm/vision", response_model=ChatResponse)
 def vision(request: VisionRequest) -> ChatResponse:
     return ChatResponse(content=llm_client.vision_chat(request.messages, request.model))
@@ -141,13 +161,17 @@ def vision(request: VisionRequest) -> ChatResponse:
 
 @app.post("/resume/diagnose", response_model=ChatResponse)
 def diagnose_resume(request: ResumeDiagnosisRequest) -> ChatResponse:
-    return ChatResponse(
-        content=llm_client.resume_diagnosis(
-            request.parsed_text,
-            request.image_base64,
-            request.image_mime_type,
+    try:
+        return ChatResponse(
+            content=llm_client.resume_diagnosis(
+                request.parsed_text,
+                request.image_base64,
+                request.image_mime_type,
+            )
         )
-    )
+    except Exception:
+        logger.exception("Resume diagnosis failed")
+        raise
 
 
 @app.post("/resume/optimize", response_model=ChatResponse)
@@ -159,6 +183,49 @@ def optimize_resume(request: ResumeOptimizationRequest) -> ChatResponse:
             request.content,
         )
     )
+
+
+@app.post("/knowledge/documents")
+async def add_knowledge_document(request: KnowledgeDocumentRequest) -> dict:
+    return await knowledge_base.add_document(
+        owner_user_id=request.owner_user_id,
+        title=request.title,
+        file_name=request.file_name,
+        category=request.category,
+        content=request.content,
+        scope=request.scope,
+        position_code=request.position_code,
+        source_type=request.source_type,
+    )
+
+
+@app.get("/knowledge/documents")
+async def list_knowledge_documents(
+    owner_user_id: int,
+    include_shared: bool = False,
+    shared_only: bool = False,
+) -> list[dict]:
+    return await knowledge_base.list_documents(owner_user_id, include_shared, shared_only)
+
+
+@app.delete("/knowledge/documents/{document_id}")
+async def delete_knowledge_document(
+    document_id: str,
+    owner_user_id: int,
+    allow_shared: bool = False,
+) -> dict:
+    return {
+        "deleted": await knowledge_base.delete_document(
+            document_id, owner_user_id, allow_shared
+        )
+    }
+
+
+@app.get("/knowledge/stats")
+async def knowledge_retrieval_stats() -> dict:
+    return await knowledge_base.retrieval_stats()
+
+
 
 
 @app.post("/llm/summarize", response_model=ChatResponse)

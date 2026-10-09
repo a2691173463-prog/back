@@ -94,8 +94,8 @@ ai:
 2. Java 校验登录态、能量值和限流。
 3. Java 创建 `interview_record`，生成本轮基础系统指令。
 4. Java 调用 Python `/agent/threads` 初始化 Agent 线程。
-5. Python 使用 `interviewId` 作为 `thread_id`，把系统消息和欢迎语写入 SQLite Checkpointer。
-6. Java 把完整业务历史写入 Redis，前端进入聊天界面。
+5. Python 使用 `interviewId` 作为 `thread_id`，把系统消息和欢迎语写入 PostgreSQL Checkpointer。
+6. 前端进入聊天界面，完整原始对话由 Checkpointer 的 `transcript` 保存。
 
 ### 3. 面试对话
 
@@ -103,31 +103,31 @@ ai:
 2. 前端通过 `EventSource` 连接 Java `/api/interview/chat`。
 3. Java 只发送本轮回答、`interviewId`、`userId` 和 `resumeId`。
 4. Python 根据 `thread_id` 从 Checkpointer 恢复此前 Agent 状态。
-5. 模型按需选择 `get_resume_summary`、`get_user_weak_skills` 或 `search_question_bank`。
-6. Python 工具通过带共享密钥的内部 HTTP 接口读取 Java 业务数据。
+5. 模型按需选择 `get_resume_summary`、`get_user_weak_skills` 或 `search_interview_knowledge`。
+6. 简历和画像工具通过内部 HTTP 接口读取 Java 业务数据；知识库工具检索当前用户上传到 pgvector 的 PDF 切片。
 7. 工具结果返回 Agent，模型结合对话状态生成下一道问题。
 8. LangGraph 把本轮消息、工具调用和结果保存为新 checkpoint。
-9. Java 将 Python SSE 流转发给前端，并把用户与 AI 消息写入 Redis 完整业务历史。
+9. Java 将 Python SSE 流转发给前端；不再在 Redis 重复保存聊天记录。
 
 ### 4. 结束面试与评估
 
 1. 用户点击“结束面试并评估”。
-2. Java 从 Redis 读取完整面试对话。
-3. Java 调用 `AiClient.evaluateInterview(...)`。
-4. Python `/interview/evaluate` 根据完整对话生成 JSON 评估报告。
+2. Java 从 Checkpointer 的 `transcript` 读取完整面试对话。
+3. Java 调用 Python `/agent/interview/finalize`。
+4. LangGraph 将评价维度并行分发，聚合为结构化评估报告。
 5. Java 解析总分、评价文本和技能画像。
-6. Java 写入 `interview_record`，并更新用户能力画像。
-7. Java 删除 Python checkpoint，并清理本轮 Redis 缓存。
+6. Java 把完整 `transcript`、报告和得分写入 `interview_record`，并更新用户能力画像。
+7. Java 在归档成功后删除 Python checkpoint。
 8. 前端展示评估报告和历史对话。
 
 ## Checkpointer 与 Redis 的边界
 
 - Checkpointer 保存 Agent 短期状态：消息、工具调用、工具结果和每轮执行快照。
-- Redis 保存业务侧完整聊天记录，并继续承担限流、分布式锁和能量值等职责。
+- Redis 不再保存聊天记录，只承担限流、分布式锁、能量值和缓存等职责。
 - MySQL 保存已完成面试、评分、简历和用户能力画像。
 - Java 不再读取 Redis 滑动窗口并重复拼接给模型。
 
-当前使用 SQLite Checkpointer，适合单机开发。多实例部署时应切换 PostgreSQL 或 Redis Checkpointer。
+当前使用 PostgreSQL Checkpointer，并通过连接池支持并发面试；SQLite 仅保留为本地回退配置。
 
 需要注意：LangGraph 与 Checkpointer 不是互相替代的关系。LangGraph 定义和执行状态图，Checkpointer 负责持久化图状态；如果移除 Checkpointer，图仍能执行，但服务重启后无法恢复多轮面试状态，也无法获得完整的 checkpoint 历史。
 
@@ -135,9 +135,9 @@ ai:
 
 - `get_resume_summary()`：`resumeId` 由运行时上下文注入，模型不能修改。
 - `get_user_weak_skills()`：`userId` 由运行时上下文注入，模型不能修改。
-- `search_question_bank(keyword)`：模型只负责选择检索关键词。
+- `search_interview_knowledge(query, category)`：模型选择检索语句和可选分类，`userId` 由运行时注入。
 
-前两个工具对模型显示为空参数工具，避免越权读取其他用户或简历。Python 不直连 MySQL，业务数据仍由 Java 掌控。
+前两个工具对模型显示为空参数工具，避免越权读取其他用户或简历。Python 不直连 MySQL；PostgreSQL 只保存 Agent 快照和按用户隔离的向量知识库。
 
 ## Java 和 Python 分工
 
@@ -191,7 +191,7 @@ LANGSMITH_PROJECT=interview-agent-service
 start.ps1
   -> FastAPI 8000
   -> 提供给 Java 后端调用
-  -> 使用项目自己的 SQLite Checkpointer
+  -> 使用项目配置的 PostgreSQL Checkpointer
 
 start-studio.ps1
   -> LangGraph Agent Server 2024

@@ -156,8 +156,8 @@
                 </div>
 
                 <div class="interview-trigger">
-                  <el-button type="success" size="large" class="start-btn" @click="startInterview(resumeId)">
-                    基于此简历开启 AI 模拟面试
+                  <el-button type="success" size="large" class="start-btn" @click="openInterviewModeDialog(resumeId)">
+                    选择模式并开始面试
                   </el-button>
                 </div>
               </div>
@@ -171,11 +171,16 @@
                   <span class="status-dot pulsing"></span>
                   <div>
                     <h3>AI 资深后端面试官</h3>
-                    <span class="desc">根据简历向你发起深度技术提问</span>
+                    <div class="interview-mode-line">
+                      <el-tag :type="currentInterviewMode === 'standard' ? 'primary' : 'warning'" size="small">
+                        {{ getInterviewModeLabel(currentInterviewMode) }}
+                      </el-tag>
+                      <span class="desc">{{ currentInterviewModeDescription }}</span>
+                    </div>
                     <span v-if="agentStreamStatus" class="desc">{{ agentStreamStatus }}</span>
                   </div>
                 </div>
-                <el-button type="danger" plain size="small" @click="confirmEndInterview">结束面试并评估</el-button>
+                <el-button type="danger" plain size="small" :disabled="sending" @click="confirmEndInterview">结束面试并评估</el-button>
               </div>
             </template>
             
@@ -227,6 +232,21 @@
                 </div>
               </div>
 
+              <section v-if="getEvaluationSkills(lastReport).length" class="skill-evaluation-section">
+                <h3>分项能力评价</h3>
+                <div class="skill-evaluation-grid">
+                  <article v-for="skill in getEvaluationSkills(lastReport)" :key="skill.skillName" class="skill-evaluation-card">
+                    <div class="skill-evaluation-heading">
+                      <strong>{{ skill.skillName }}</strong>
+                      <el-tag :type="skill.score >= 4 ? 'success' : (skill.score >= 3 ? 'warning' : 'danger')">
+                        {{ skill.score }}/5
+                      </el-tag>
+                    </div>
+                    <p>{{ skill.comment }}</p>
+                  </article>
+                </div>
+              </section>
+
               <div class="report-details" style="margin-top: 30px;">
                 <h3>面谈历史回顾</h3>
                 <div class="history-chat-list">
@@ -248,34 +268,36 @@
               <span class="subtitle">记录了您以往上传诊断的简历数据</span>
             </div>
 
-            <el-table :data="resumeList" style="width: 100%;" class="custom-table" v-loading="loadingList">
-              <el-table-column prop="fileName" label="文件名" min-width="400"></el-table-column>
-              <el-table-column prop="createTime" label="上传时间" min-width="240">
+            <el-table :data="resumeList" style="width: 100%;" class="custom-table resume-history-table" v-loading="loadingList">
+              <el-table-column prop="fileName" label="文件名" min-width="180" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="createTime" label="上传时间" min-width="165">
                 <template #default="scope">
                   {{ formatDate(scope.row.createTime) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="status" label="状态" min-width="160">
+              <el-table-column prop="status" label="状态" width="96" align="center">
                 <template #default="scope">
                   <el-tag :type="scope.row.status === 1 ? 'success' : (scope.row.status === 2 ? 'danger' : 'info')">
                     {{ scope.row.status === 1 ? '已诊断' : (scope.row.status === 2 ? '失败' : '处理中') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" min-width="220" fixed="right">
+              <el-table-column label="操作" width="205" align="center">
                 <template #default="scope">
-                  <el-button 
-                    type="primary" 
-                    size="small" 
-                    :disabled="scope.row.status !== 1" 
-                    @click="viewHistoricResume(scope.row)"
-                  >查看诊断</el-button>
-                  <el-button 
-                    type="success" 
-                    size="small" 
-                    :disabled="scope.row.status !== 1" 
-                    @click="startInterviewFromHistory(scope.row.id)"
-                  >发起面试</el-button>
+                  <div class="resume-row-actions">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :disabled="scope.row.status !== 1"
+                      @click="viewHistoricResume(scope.row)"
+                    >查看诊断</el-button>
+                    <el-button
+                      type="success"
+                      size="small"
+                      :disabled="scope.row.status !== 1"
+                      @click="startInterviewFromHistory(scope.row.id)"
+                    >发起面试</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -292,6 +314,13 @@
 
             <el-table :data="interviewList" style="width: 100%;" class="custom-table" v-loading="loadingList">
               <el-table-column prop="id" label="面试编号" min-width="120"></el-table-column>
+              <el-table-column prop="interviewMode" label="面试模式" min-width="150">
+                <template #default="scope">
+                  <el-tag :type="normalizeInterviewMode(scope.row.interviewMode) === 'standard' ? 'primary' : 'warning'">
+                    {{ getInterviewModeLabel(scope.row.interviewMode) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column prop="score" label="综合得分" min-width="160">
                 <template #default="scope">
                   <el-tag :type="scope.row.score >= 80 ? 'success' : (scope.row.score >= 60 ? 'warning' : 'danger')" v-if="scope.row.status === 1">
@@ -332,9 +361,9 @@
           </div>
         </div>
 
-        <!-- TAB 4: 经典题库 -->
-        <div v-else-if="activeTab === 'questions'" class="tab-content">
-          <QuestionBank @start-interview="handleStartInterviewFromQuestion" />
+        <!-- TAB 4: 面试知识库 -->
+        <div v-else-if="activeTab === 'knowledge'" class="tab-content">
+          <KnowledgeBase />
         </div>
 
         <!-- TAB 5: 模板广场 -->
@@ -377,6 +406,12 @@
     <!-- 弹窗：查看历史面试评估报告与对话历史 -->
     <el-dialog v-model="interviewDialogVisible" title="面试历史诊断评估" width="1450px" class="glass-dialog">
       <div v-if="selectedInterview" class="historic-interview-panel">
+        <div class="historic-mode-row">
+          <span>面试模式</span>
+          <el-tag :type="normalizeInterviewMode(selectedInterview.interviewMode) === 'standard' ? 'primary' : 'warning'">
+            {{ getInterviewModeLabel(selectedInterview.interviewMode) }}
+          </el-tag>
+        </div>
         <div class="score-section compact-score">
           <div class="score-circle-wrapper">
             <div class="score-circle" :style="getScoreColorStyle(selectedInterview.score)">
@@ -390,6 +425,21 @@
           </div>
         </div>
 
+        <section v-if="getEvaluationSkills(selectedInterview).length" class="skill-evaluation-section compact-skills">
+          <h3>分项能力评价</h3>
+          <div class="skill-evaluation-grid">
+            <article v-for="skill in getEvaluationSkills(selectedInterview)" :key="skill.skillName" class="skill-evaluation-card">
+              <div class="skill-evaluation-heading">
+                <strong>{{ skill.skillName }}</strong>
+                <el-tag :type="skill.score >= 4 ? 'success' : (skill.score >= 3 ? 'warning' : 'danger')">
+                  {{ skill.score }}/5
+                </el-tag>
+              </div>
+              <p>{{ skill.comment }}</p>
+            </article>
+          </div>
+        </section>
+
         <h3 class="history-title">面试提问与回答回放</h3>
         <div class="history-chat-list dialog-chat-list">
           <div v-for="(msg, index) in getParsedHistory(selectedInterview.chatHistory)" :key="index" :class="['history-msg-item', msg.role]">
@@ -398,6 +448,49 @@
           </div>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 弹窗：选择面试策略 -->
+    <el-dialog v-model="interviewModeDialogVisible" title="选择面试模式" width="620px" class="glass-dialog interview-mode-dialog">
+      <div class="mode-intro">两种模式共用同一份简历，但获取候选人上下文的范围不同。</div>
+      <div class="interview-mode-options" role="radiogroup" aria-label="面试模式">
+        <button
+          type="button"
+          :class="['interview-mode-option', { active: selectedInterviewMode === 'standard' }]"
+          @click="selectedInterviewMode = 'standard'"
+        >
+          <div class="mode-option-heading">
+            <span>标准面试</span>
+            <el-tag type="primary" size="small">模拟真实流程</el-tag>
+          </div>
+          <p>只读取本次简历，不读取历史薄弱项和评分。按项目、基础与场景题进行客观考察，结束后统一反馈。</p>
+        </button>
+        <button
+          type="button"
+          :class="['interview-mode-option', { active: selectedInterviewMode === 'practice' }]"
+          @click="selectedInterviewMode = 'practice'"
+        >
+          <div class="mode-option-heading">
+            <span>专项训练</span>
+            <el-tag type="warning" size="small">针对薄弱项</el-tag>
+          </div>
+          <p>结合简历和历史用户画像，优先追问薄弱技能并动态调整难度，适合查漏补缺和重复练习。</p>
+        </button>
+      </div>
+      <div class="position-package-select">
+        <label>目标岗位知识包</label>
+        <el-select v-model="selectedPositionCode" style="width: 100%">
+          <el-option label="通用技术面试" value="GENERAL" />
+          <el-option label="Java 后端开发" value="JAVA_BACKEND" />
+          <el-option label="前端开发" value="FRONTEND" />
+          <el-option label="AI Agent 开发" value="AI_AGENT" />
+          <el-option label="测试开发" value="QA_ENGINEER" />
+        </el-select>
+      </div>
+      <template #footer>
+        <el-button @click="interviewModeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmInterviewMode">开始面试</el-button>
+      </template>
     </el-dialog>
 
     <!-- 弹窗：登录 / 注册对话框 (针对游客操作的拦截弹窗) -->
@@ -444,7 +537,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 // 导入新组件
-import QuestionBank from './components/QuestionBank.vue'
+import KnowledgeBase from './components/KnowledgeBase.vue'
 import TemplateSquare from './components/TemplateSquare.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 
@@ -624,11 +717,11 @@ const activeTab = ref('workspace')
 const visibleTabs = computed(() => {
   const baseTabs = [
     { value: 'workspace', label: '智能工作台', icon: Trophy },
-    { value: 'questions', label: '经典题库', icon: QuestionFilled },
     { value: 'templates', label: '模板广场', icon: Document }
   ]
   if (token.value) {
     baseTabs.push(
+      { value: 'knowledge', label: '面试知识库', icon: Document },
       { value: 'resumes', label: '简历诊断历史', icon: Document },
       { value: 'interviews', label: '模拟面试历史', icon: List }
     )
@@ -667,39 +760,6 @@ const fetchUserInfo = async () => {
 if (token.value) {
   fetchSignStatus()
   fetchUserInfo()
-}
-
-// 针对题目发起对练的处理器
-const handleStartInterviewFromQuestion = async (qId: number) => {
-  try {
-    const res = await axios.get('/api/resume/list')
-    if (res.data.code === 200) {
-      const list = res.data.data
-      if (!list || list.length === 0) {
-        ElMessage.warning('您还没有上传过简历，请先在工作台上传一份简历。')
-        switchTab('workspace')
-        return
-      }
-      // 默认使用最近上传的一份简历（第一项）
-      const rId = list[0].id
-      
-      // 调用初始化题目对练接口
-      const initRes = await axios.post(`/api/questions/init-interview?questionId=${qId}&resumeId=${rId}`)
-      fetchSignStatus()
-      if (initRes.data.code === 200) {
-        currentInterviewId.value = initRes.data.data
-        messages.value = [{ role: 'assistant', content: '你好！我是你的 AI 面试官。我已经针对你选择的题目做好了准备，请问你准备好开始面试了吗？' }]
-        showReport.value = false
-        lastReport.value = null
-        switchTab('workspace')
-        scrollToBottom()
-      } else {
-        ElMessage.error(initRes.data.message || '面试初始化失败')
-      }
-    }
-  } catch (e) {
-    ElMessage.error('开启题目面试失败，请检查配置')
-  }
 }
 
 
@@ -741,7 +801,7 @@ const checkDiagnosisStatus = async () => {
     const res = await axios.get(`/api/resume/${resumeId.value}`)
     if (res.data.code === 200) {
       const data = res.data.data
-      if (data.status === 0) {
+      if (data.status === 0 || data.status === 3) {
         ElMessage.info('AI 面试官仍在解析和诊断中，请稍后再试...')
       } else if (data.status === 1) {
         ElMessage.success('诊断成功！')
@@ -768,6 +828,12 @@ const checkDiagnosisStatus = async () => {
 
 // 5. 工作台 - 模拟面试业务
 const currentInterviewId = ref<number | null>(null)
+type InterviewMode = 'standard' | 'practice'
+const currentInterviewMode = ref<InterviewMode>('standard')
+const selectedInterviewMode = ref<InterviewMode>('standard')
+const selectedPositionCode = ref('GENERAL')
+const interviewModeDialogVisible = ref(false)
+const pendingInterviewResumeId = ref<number | null>(null)
 const messages = ref<{role: string, content: string}[]>([])
 const inputText = ref('')
 const sending = ref(false)
@@ -778,18 +844,50 @@ const chatBox = ref<any>(null)
 const showReport = ref(false)
 const lastReport = ref<any>(null)
 
-const startInterview = async (rId: number) => {
+const normalizeInterviewMode = (mode: unknown): InterviewMode => mode === 'practice' ? 'practice' : 'standard'
+const getInterviewModeLabel = (mode: unknown) => normalizeInterviewMode(mode) === 'standard' ? '标准面试' : '专项训练'
+const currentInterviewModeDescription = computed(() => currentInterviewMode.value === 'standard'
+  ? '不读取历史薄弱项，按真实流程综合考察'
+  : '结合历史能力画像进行针对性训练')
+
+const openInterviewModeDialog = (rId: number | null) => {
   if (!token.value) {
     loginDialogVisible.value = true
     ElMessage.warning('请先登录以开启模拟面试')
     return
   }
+  if (!rId) {
+    ElMessage.warning('请先选择一份已完成诊断的简历')
+    return
+  }
+  pendingInterviewResumeId.value = rId
+  selectedInterviewMode.value = 'standard'
+  selectedPositionCode.value = 'GENERAL'
+  interviewModeDialogVisible.value = true
+}
+
+const confirmInterviewMode = () => {
+  const rId = pendingInterviewResumeId.value
+  if (!rId) return
+  interviewModeDialogVisible.value = false
+  startInterview(rId, selectedInterviewMode.value, selectedPositionCode.value)
+}
+
+const startInterview = async (rId: number, mode: InterviewMode, position = 'GENERAL') => {
   try {
-    const res = await axios.post(`/api/interview/init?resumeId=${rId}`)
+    const res = await axios.post('/api/interview/init', null, {
+      params: { resumeId: rId, mode, position }
+    })
     fetchSignStatus() // 初始化请求后刷新能量槽
     if (res.data.code === 200) {
       currentInterviewId.value = res.data.data
-      messages.value = [{ role: 'assistant', content: '你好！我是你的 AI 面试官。我已经阅读了你的简历，请问你准备好开始面试了吗？' }]
+      currentInterviewMode.value = mode
+      messages.value = [{
+        role: 'assistant',
+        content: mode === 'standard'
+          ? '你好！我是你的面试官。本次将按标准面试流程进行，我已经阅读了你的简历，请问你准备好开始了吗？'
+          : '你好！我是你的面试教练。本次将结合你的历史表现进行专项训练，请问你准备好开始了吗？'
+      }]
       showReport.value = false
       lastReport.value = null
       scrollToBottom()
@@ -817,9 +915,14 @@ const sendMessage = () => {
   inputText.value = ''
   sending.value = true
 
-  const aiMsgIndex = messages.value.length
-  messages.value.push({ role: 'assistant', content: '' })
-  scrollToBottom()
+  let aiMsgIndex: number | null = null
+  const ensureAssistantMessage = () => {
+    if (aiMsgIndex === null) {
+      aiMsgIndex = messages.value.length
+      messages.value.push({ role: 'assistant', content: '' })
+    }
+    return aiMsgIndex
+  }
 
   // Native SSE EventSource (EventSource supports query parameter authorization)
   const tokenQuery = token.value ? `&token=${token.value}` : ''
@@ -835,7 +938,9 @@ const sendMessage = () => {
 
     if (payload?.type === 'token') {
       agentStreamStatus.value = ''
-      messages.value[aiMsgIndex].content += payload.content || ''
+      const content = payload.content || ''
+      if (!content) return
+      messages.value[ensureAssistantMessage()].content += content
       scrollToBottom()
       return
     }
@@ -843,7 +948,7 @@ const sendMessage = () => {
       const toolLabels: Record<string, string> = {
         get_resume_summary: '正在读取简历',
         get_user_weak_skills: '正在分析历史薄弱项',
-        search_question_bank: '正在检索相关题目'
+        search_interview_knowledge: '正在检索你的面试知识库'
       }
       agentStreamStatus.value = toolLabels[payload.tool] || '正在查询面试资料'
       return
@@ -866,7 +971,7 @@ const sendMessage = () => {
     if (payload?.type === 'error') {
       console.error('AI stream error:', payload.message)
       agentStreamStatus.value = ''
-      messages.value[aiMsgIndex].content = 'AI 服务调用失败，请检查 Python agent-service 和后端控制台日志。'
+      messages.value[ensureAssistantMessage()].content = 'AI 服务调用失败，请检查 Python agent-service 和后端控制台日志。'
       sse.close()
       sending.value = false
       scrollToBottom()
@@ -874,14 +979,14 @@ const sendMessage = () => {
     }
     if (event.data?.startsWith('[AI_ERROR]')) {
       console.error('AI stream error:', event.data)
-      messages.value[aiMsgIndex].content = 'AI 服务调用失败，请检查 Python agent-service 和后端控制台日志。'
+      messages.value[ensureAssistantMessage()].content = 'AI 服务调用失败，请检查 Python agent-service 和后端控制台日志。'
       agentStreamStatus.value = ''
       sse.close()
       sending.value = false
       scrollToBottom()
       return
     }
-    messages.value[aiMsgIndex].content += event.data
+    messages.value[ensureAssistantMessage()].content += event.data
     scrollToBottom()
   }
   
@@ -895,8 +1000,13 @@ const sendMessage = () => {
 }
 
 const confirmEndInterview = () => {
+  const lastMessage = messages.value[messages.value.length - 1]
+  const hasUnansweredQuestion = lastMessage?.role === 'assistant'
+  const confirmMessage = hasUnansweredQuestion
+    ? '当前最后一道题尚未作答。现在结束后，该题不会计入评分，系统只会根据已经完成的问答生成报告。'
+    : '您确定现在结束模拟面试吗？系统只会根据已经完成的技术问答进行打分评估。'
   ElMessageBox.confirm(
-    '您确定现在结束模拟面试吗？系统会根据您刚才的所有技术问答进行打分评估。',
+    confirmMessage,
     '提示',
     {
       confirmButtonText: '确定结束',
@@ -981,7 +1091,7 @@ const viewHistoricResume = (row: any) => {
 const startInterviewFromHistory = (rId: number) => {
   resumeId.value = rId
   switchTab('workspace')
-  startInterview(rId)
+  openInterviewModeDialog(rId)
 }
 
 // 7. 模拟面试历史 TAB 业务
@@ -1025,6 +1135,7 @@ const continueInterview = async (id: number) => {
 
     const data = res.data.data
     currentInterviewId.value = data.interviewId
+    currentInterviewMode.value = normalizeInterviewMode(data.interviewMode)
     resumeId.value = data.resumeId
     messages.value = Array.isArray(data.messages)
       ? data.messages.map((message: any) => ({
@@ -1050,6 +1161,19 @@ const getParsedHistory = (historyJsonStr: string) => {
     const list = JSON.parse(historyJsonStr)
     return list.filter((m: any) => m.role !== 'system')
   } catch(e) {
+    return []
+  }
+}
+
+const getEvaluationSkills = (report: any) => {
+  if (!report) return []
+  const raw = report.evaluationSkills ?? report.skills
+  if (Array.isArray(raw)) return raw
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (_) {
     return []
   }
 }
@@ -1561,6 +1685,74 @@ body {
   font-size: 13px;
   color: #6c7086;
 }
+.interview-mode-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.historic-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  color: #4c4f69;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mode-intro {
+  color: #6c7086;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.interview-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.position-package-select {
+  margin-top: 18px;
+}
+.position-package-select label {
+  display: block;
+  margin-bottom: 8px;
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+}
+.interview-mode-option {
+  min-height: 172px;
+  padding: 18px;
+  border: 1px solid #d9dce5;
+  border-radius: 8px;
+  background: #fff;
+  color: #303133;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.interview-mode-option:hover,
+.interview-mode-option.active {
+  border-color: #409eff;
+  background: #f5f9ff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.12);
+}
+.mode-option-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 17px;
+  font-weight: 700;
+}
+.interview-mode-option p {
+  margin: 0;
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.72;
+}
 .status-dot {
   width: 10px;
   height: 10px;
@@ -1713,6 +1905,43 @@ body {
   font-size: 14px;
   line-height: 1.6;
   color: #5c5f77;
+  white-space: pre-line;
+}
+
+.skill-evaluation-section {
+  margin-top: 24px;
+}
+.skill-evaluation-section > h3 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  color: #333;
+}
+.skill-evaluation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.skill-evaluation-card {
+  padding: 16px;
+  border: 1px solid #e7e7ee;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.skill-evaluation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.skill-evaluation-card p {
+  margin: 0;
+  color: #5c5f77;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.compact-skills {
+  margin-bottom: 22px;
 }
 
 .report-details h3 {
@@ -1779,6 +2008,17 @@ body {
 .custom-table {
   background: transparent !important;
 }
+.resume-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.resume-row-actions :deep(.el-button) {
+  min-width: 82px;
+  margin: 0;
+}
 :deep(.el-table) {
   --el-table-border-color: rgba(0,0,0,0.05);
   --el-table-header-bg-color: rgba(255,255,255,0.6);
@@ -1787,6 +2027,20 @@ body {
 :deep(.el-table th) {
   font-weight: 700;
   color: #333;
+}
+
+@media (max-width: 1180px) {
+  .content-viewport {
+    padding: 20px;
+  }
+
+  .list-card-container {
+    padding: 20px;
+  }
+
+  .tab-header-row {
+    margin-bottom: 18px;
+  }
 }
 
 /* 弹窗中的评估历史 */
@@ -1893,6 +2147,14 @@ body {
 }
 
 @media (max-width: 760px) {
+  .interview-mode-options {
+    grid-template-columns: 1fr;
+  }
+
+  .interview-mode-option {
+    min-height: auto;
+  }
+
   .portal-wrapper {
     flex-direction: column;
   }

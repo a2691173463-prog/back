@@ -85,7 +85,7 @@ public class CacheClient {
         }
 
         // 4. 尝试获取互斥锁
-        String lockKey = RedisConstants.LOCK_QUESTION_KEY + id;
+        String lockKey = RedisConstants.LOCK_CACHE_KEY + keyPrefix + id;
         R r = null;
         try {
             boolean isLock = tryLock(lockKey);
@@ -148,7 +148,7 @@ public class CacheClient {
         }
 
         // 5. 已过期，尝试获取互斥锁进行异步重建
-        String lockKey = RedisConstants.LOCK_QUESTION_KEY + id;
+        String lockKey = RedisConstants.LOCK_CACHE_KEY + keyPrefix + id;
         boolean isLock = tryLock(lockKey);
         if (isLock) {
             // 获取锁成功，开启独立线程重建缓存
@@ -170,7 +170,7 @@ public class CacheClient {
     }
 
     private boolean tryLock(String key) {
-        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", RedisConstants.LOCK_QUESTION_TTL, TimeUnit.SECONDS);
+        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", RedisConstants.LOCK_CACHE_TTL, TimeUnit.SECONDS);
         return BooleanUtil.isTrue(flag);
     }
 

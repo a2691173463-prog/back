@@ -1,0 +1,16 @@
+{
+  "runId": "3cbae233b45a",
+  "messageFormat": "java-long",
+  "tasks": 12,
+  "elapsedSeconds": 14.158,
+  "throughputTasksPerSecond": 0.848,
+  "success": 12,
+  "failed": 0,
+  "unfinished": 0,
+  "rabbitConsumers": 1,
+  "rabbitPrefetch": [
+    250
+  ],
+  "mockAiRequests": 12,
+  "mockAiMaxConcurrency": 1
+}

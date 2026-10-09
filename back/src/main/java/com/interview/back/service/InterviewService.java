@@ -8,7 +8,9 @@ import java.util.Map;
 
 public interface InterviewService extends IService<InterviewRecord> {
     Long initInterview(Long resumeId, Long userId);
-    Long initInterview(Long resumeId, Long userId, Long questionId);
+    Long initInterview(Long resumeId, Long userId, String interviewMode);
+
+    Long initInterview(Long resumeId, Long userId, String interviewMode, String positionCode);
     SseEmitter chat(Long interviewId, String userMessage);
     Map<String, Object> resumeInterview(Long interviewId, Long userId);
     InterviewRecord endInterview(Long interviewId);

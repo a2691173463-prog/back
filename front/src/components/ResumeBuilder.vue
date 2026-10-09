@@ -1,5 +1,5 @@
 <template>
-  <div class="resume-builder" :style="{ '--resume-accent': accentColor }">
+  <div class="resume-builder" :style="{ '--resume-accent': accentColor, '--resume-soft': softColor }">
     <header class="builder-toolbar">
       <div class="builder-title">
         <el-button :icon="ArrowLeft" circle title="返回模板广场" @click="emit('close')" />
@@ -10,6 +10,7 @@
       </div>
       <div class="save-status"><i :class="{ saved: autoSaveStatus === '已自动保存' }" />{{ autoSaveStatus }}</div>
       <div class="toolbar-actions">
+        <el-button :icon="DocumentCopy" @click="restoreTemplateExample">载入示例</el-button>
         <el-button :icon="RefreshLeft" @click="restoreCloudDraft">恢复云端</el-button>
         <el-button :icon="DocumentChecked" :loading="cloudSaving" @click="saveCloudDraft">保存云端</el-button>
         <el-button type="primary" :icon="Printer" @click="printResume">导出 PDF</el-button>
@@ -27,6 +28,21 @@
               <el-form-item label="邮箱"><el-input v-model="draft.personal.email" maxlength="80" /></el-form-item>
               <el-form-item label="所在城市"><el-input v-model="draft.personal.location" maxlength="30" /></el-form-item>
               <el-form-item label="个人主页"><el-input v-model="draft.personal.website" maxlength="120" /></el-form-item>
+            </div>
+            <div class="avatar-editor">
+              <div class="avatar-editor-preview">
+                <img v-if="draft.personal.avatar" :src="draft.personal.avatar" alt="简历头像预览" />
+                <span v-else>{{ avatarInitial }}</span>
+              </div>
+              <div>
+                <strong>个人照片</strong>
+                <p>建议使用清晰的正面职业照，上传后会自动压缩并保存在草稿中。</p>
+                <div class="avatar-actions">
+                  <el-button :icon="Upload" @click="avatarInput?.click()">上传照片</el-button>
+                  <el-button v-if="draft.personal.avatar" :icon="Delete" text @click="draft.personal.avatar = ''">移除</el-button>
+                </div>
+                <input ref="avatarInput" class="avatar-file-input" type="file" accept="image/jpeg,image/png,image/webp" @change="handleAvatarUpload" />
+              </div>
             </div>
             <el-form-item label="个人优势">
               <el-input v-model="draft.summary" type="textarea" :rows="5" maxlength="800" show-word-limit />
@@ -91,12 +107,26 @@
         </el-tabs>
       </section>
 
-      <section class="preview-stage">
-        <article class="resume-print-sheet" :class="templateClass">
+      <section ref="previewStage" class="preview-stage">
+        <article class="resume-print-sheet" :class="templateClass" :style="{ '--preview-scale': previewScale }">
           <header class="resume-header">
-            <h1>{{ draft.personal.name || '你的姓名' }}</h1>
-            <strong>{{ draft.personal.targetRole || template.category || '目标岗位' }}</strong>
-            <p>{{ contactLine || '手机号 · 邮箱 · 所在城市 · 个人主页' }}</p>
+            <div class="resume-avatar">
+              <img v-if="draft.personal.avatar" :src="draft.personal.avatar" alt="个人照片" />
+              <span v-else>{{ avatarInitial }}</span>
+            </div>
+            <div class="resume-identity">
+              <h1>{{ draft.personal.name || '你的姓名' }}</h1>
+              <strong>{{ draft.personal.targetRole || template.category || '目标岗位' }}</strong>
+              <div class="resume-contacts">
+                <span v-if="draft.personal.phone">电话：{{ draft.personal.phone }}</span>
+                <span v-if="draft.personal.email">邮箱：{{ draft.personal.email }}</span>
+                <span v-if="draft.personal.location">城市：{{ draft.personal.location }}</span>
+                <span v-if="draft.personal.website">主页：{{ draft.personal.website }}</span>
+                <span v-if="!contactLine">手机号 · 邮箱 · 所在城市 · 个人主页</span>
+              </div>
+            </div>
+            <i class="header-line line-one" />
+            <i class="header-line line-two" />
           </header>
 
           <ResumeSection v-if="draft.summary" title="个人优势"><p class="pre-line">{{ draft.summary }}</p></ResumeSection>
@@ -138,8 +168,8 @@
           </div>
         </div>
         <div class="quality-note">
-          <b>真实信息优先</b>
-          <p>AI 只负责改写，不会替你补造数据。请确认优化后的每一项都能在面试中解释。</p>
+          <b>示例仅供参考</b>
+          <p>模板内姓名、联系方式和经历均为虚构示例。请替换为真实信息，并确保每一项都能在面试中解释。</p>
         </div>
       </aside>
     </main>
@@ -148,23 +178,10 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, CircleCheck, Delete, DocumentChecked, MagicStick, Plus, Printer, RefreshLeft, Warning } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheck, Delete, DocumentChecked, DocumentCopy, MagicStick, Plus, Printer, RefreshLeft, Upload, Warning } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
-
-interface TemplateInfo { id: number; name: string; category?: string }
-interface Education { uid: string; school: string; major: string; degree: string; period: string; details: string }
-interface Project { uid: string; name: string; role: string; period: string; tech: string; description: string }
-interface Experience { uid: string; company: string; role: string; period: string; location: string; description: string }
-interface ResumeContent {
-  personal: { name: string; targetRole: string; phone: string; email: string; location: string; website: string }
-  summary: string
-  education: Education[]
-  projects: Project[]
-  experiences: Experience[]
-  skills: string
-  awards: string
-}
+import { getResumeExample, type Education, type Experience, type Project, type ResumeContent, type TemplateInfo } from '../data/resumeExamples'
 
 const props = defineProps<{ template: TemplateInfo }>()
 const emit = defineEmits<{ (event: 'close'): void }>()
@@ -172,22 +189,49 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`
 const newEducation = (): Education => ({ uid: uid(), school: '', major: '', degree: '', period: '', details: '' })
 const newProject = (): Project => ({ uid: uid(), name: '', role: '', period: '', tech: '', description: '' })
 const newExperience = (): Experience => ({ uid: uid(), company: '', role: '', period: '', location: '', description: '' })
-const emptyDraft = (): ResumeContent => ({
-  personal: { name: '', targetRole: props.template.category || '', phone: '', email: '', location: '', website: '' },
+const blankDraft = (): ResumeContent => ({
+  personal: { name: '', targetRole: props.template.category || '', phone: '', email: '', location: '', website: '', avatar: '' },
   summary: '', education: [newEducation()], projects: [newProject()], experiences: [], skills: '', awards: ''
 })
 
 const activeSection = ref('basic')
-const draft = ref<ResumeContent>(emptyDraft())
+const draft = ref<ResumeContent>(getResumeExample(props.template))
 const draftId = ref<number | null>(null)
 const cloudSaving = ref(false)
 const optimizingKey = ref('')
 const autoSaveStatus = ref('等待编辑')
+const avatarInput = ref<HTMLInputElement | null>(null)
+const previewStage = ref<HTMLElement | null>(null)
+const previewScale = ref(1)
+let previewResizeObserver: ResizeObserver | undefined
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 const localKey = computed(() => `resume-builder:draft:${props.template.id}`)
-const accentColor = computed(() => /PM|产品/i.test(props.template.category || '') ? '#75549b' : /设计/i.test(props.template.category || '') ? '#286f75' : '#28745a')
-const templateClass = computed(() => ({ product: /PM|产品/i.test(props.template.category || ''), design: /设计/i.test(props.template.category || '') }))
-const contactLine = computed(() => Object.values(draft.value.personal).slice(2).filter(Boolean).join(' · '))
+const accentColor = computed(() => {
+  const category = props.template.category || ''
+  if (/PM|产品/i.test(category)) return '#8b477d'
+  if (/Agent|算法|人工智能/i.test(category)) return '#345d8c'
+  if (/前端|设计/i.test(category)) return '#267776'
+  if (/数据/i.test(category)) return '#376e59'
+  if (/测试/i.test(category)) return '#805b32'
+  if (/运维/i.test(category)) return '#526070'
+  return '#b52f55'
+})
+const softColor = computed(() => `${accentColor.value}14`)
+const templateClass = computed(() => ({
+  product: /PM|产品/i.test(props.template.category || ''),
+  technical: /Agent|算法|人工智能|运维/i.test(props.template.category || ''),
+  creative: /前端|设计/i.test(props.template.category || '')
+}))
+const contactLine = computed(() => [draft.value.personal.phone, draft.value.personal.email, draft.value.personal.location, draft.value.personal.website].filter(Boolean).join(' · '))
+const avatarInitial = computed(() => (draft.value.personal.name || '简').trim().slice(0, 1))
+const fitPreviewToStage = () => {
+  if (!previewStage.value) return
+  const styles = window.getComputedStyle(previewStage.value)
+  const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight)
+  const availableWidth = previewStage.value.clientWidth - horizontalPadding - 2
+  const a4Width = 210 * 96 / 25.4
+  previewScale.value = Math.min(1, Math.max(0.5, availableWidth / a4Width))
+}
 const nonEmptyEducation = computed(() => draft.value.education.filter(item => item.school || item.major || item.details))
 const nonEmptyProjects = computed(() => draft.value.projects.filter(item => item.name || item.description))
 const nonEmptyExperiences = computed(() => draft.value.experiences.filter(item => item.company || item.description))
@@ -216,8 +260,8 @@ watch(draft, () => {
 }, { deep: true })
 
 const normalizeDraft = (value: Partial<ResumeContent>): ResumeContent => ({
-  ...emptyDraft(), ...value,
-  personal: { ...emptyDraft().personal, ...(value.personal || {}) },
+  ...blankDraft(), ...value,
+  personal: { ...blankDraft().personal, ...(value.personal || {}) },
   education: Array.isArray(value.education) ? value.education : [newEducation()],
   projects: Array.isArray(value.projects) ? value.projects : [newProject()],
   experiences: Array.isArray(value.experiences) ? value.experiences : []
@@ -263,6 +307,54 @@ const restoreCloudDraft = async () => {
   }
 }
 
+const restoreTemplateExample = async () => {
+  try {
+    await ElMessageBox.confirm('载入完整示例会覆盖当前编辑内容，是否继续？', '载入模板示例', { type: 'warning' })
+    draft.value = getResumeExample(props.template)
+    draftId.value = null
+    ElMessage.success('已载入完整示例，请替换为你的真实经历')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error('载入示例失败')
+  }
+}
+
+const handleAvatarUpload = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('照片大小不能超过 5MB')
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      const targetRatio = 4 / 5
+      const sourceRatio = image.width / image.height
+      let sourceWidth = image.width
+      let sourceHeight = image.height
+      let sourceX = 0
+      let sourceY = 0
+      if (sourceRatio > targetRatio) {
+        sourceWidth = image.height * targetRatio
+        sourceX = (image.width - sourceWidth) / 2
+      } else {
+        sourceHeight = image.width / targetRatio
+        sourceY = (image.height - sourceHeight) / 2
+      }
+      canvas.width = 320
+      canvas.height = 400
+      canvas.getContext('2d')?.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height)
+      draft.value.personal.avatar = canvas.toDataURL('image/jpeg', 0.82)
+      ElMessage.success('照片已添加到简历')
+    }
+    image.onerror = () => ElMessage.error('无法读取这张图片')
+    image.src = String(reader.result)
+  }
+  reader.readAsDataURL(file)
+}
+
 const optimizeText = async (sectionType: string, content: string, apply: (value: string) => void, key: string) => {
   if (!content.trim()) return ElMessage.warning('请先填写需要优化的内容')
   optimizingKey.value = key
@@ -289,11 +381,17 @@ const ResumeSection = defineComponent({
 })
 
 onMounted(() => {
+  previewResizeObserver = new ResizeObserver(fitPreviewToStage)
+  if (previewStage.value) previewResizeObserver.observe(previewStage.value)
+  fitPreviewToStage()
   const saved = localStorage.getItem(localKey.value)
   if (!saved) return
   try { loadJson(saved); autoSaveStatus.value = '已恢复本地草稿' } catch { localStorage.removeItem(localKey.value) }
 })
-onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
+onBeforeUnmount(() => {
+  previewResizeObserver?.disconnect()
+  if (saveTimer) clearTimeout(saveTimer)
+})
 </script>
 
 <style scoped>
@@ -307,7 +405,7 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 .save-status i.saved { background: #3e8b5c; }
 .toolbar-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .toolbar-actions .el-button { margin: 0; }
-.builder-workspace { display: grid; grid-template-columns: minmax(340px, .85fr) minmax(540px, 1.25fr) minmax(220px, .55fr); align-items: start; gap: 16px; padding: 16px; }
+.builder-workspace { display: grid; grid-template-columns: minmax(320px,.65fr) minmax(0,1.6fr) minmax(220px,.5fr); align-items: start; gap: 16px; padding: 16px; }
 .editor-panel, .quality-panel { border: 1px solid #dfe3e8; border-radius: 7px; background: #fff; }
 .editor-panel { min-width: 0; min-height: calc(100vh - 100px); padding: 4px 18px 20px; overflow: hidden; }
 .editor-panel :deep(.el-form-item) { display: block; }
@@ -323,51 +421,87 @@ onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
 .repeat-section { margin-bottom: 16px; padding: 13px; border: 1px solid #e0e4e9; border-radius: 6px; background: #fafbfc; }
 .repeat-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .repeat-heading strong { font-size: 13px; }
-.preview-stage { display: flex; min-height: calc(100vh - 100px); justify-content: center; padding: 24px; overflow: auto; background: #e3e6ea; }
-.resume-print-sheet { box-sizing: border-box; width: 210mm; min-height: 297mm; padding: 15mm 16mm; background: #fff; box-shadow: 0 7px 24px rgba(20,25,31,.15); color: #252b30; font-family: Arial, "Microsoft YaHei", sans-serif; }
-.resume-header { padding-bottom: 12px; border-bottom: 2px solid var(--resume-accent); }
-.resume-header h1 { margin: 0; font-size: 26px; letter-spacing: 0; }
-.resume-header strong { display: block; margin-top: 4px; color: var(--resume-accent); font-size: 13px; }
-.resume-header p { margin: 7px 0 0; color: #626a73; font-size: 10px; }
-.resume-section { margin-top: 13px; }
-.resume-section h3 { margin: 0 0 7px; padding-bottom: 4px; border-bottom: 1px solid var(--resume-accent); color: var(--resume-accent); font-size: 13px; }
-.resume-section p { margin: 4px 0; font-size: 10.5px; line-height: 1.65; }
-.resume-entry { margin-bottom: 9px; }
+.avatar-editor { display: grid; grid-template-columns: 72px 1fr; gap: 13px; align-items: center; margin: 2px 0 18px; padding: 12px; border: 1px solid #e0e4e9; border-radius: 6px; background: #fafbfc; }
+.avatar-editor-preview { display: flex; width: 64px; height: 80px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #d8dde4; background: var(--resume-soft); color: var(--resume-accent); font-size: 24px; font-weight: 700; }
+.avatar-editor-preview img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-editor strong { font-size: 13px; }
+.avatar-editor p { margin: 4px 0 9px; color: #777f89; font-size: 11px; line-height: 1.5; }
+.avatar-actions { display: flex; gap: 6px; }
+.avatar-file-input { display: none; }
+.preview-stage { position: relative; display: block; min-width: 0; min-height: calc(100vh - 100px); padding: 16px; overflow-x: hidden; overflow-y: auto; background: #e3e6ea; text-align: center; }
+.resume-print-sheet { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0 auto; padding: 15mm 16mm; overflow: hidden; background: #fff; box-shadow: 0 7px 24px rgba(20,25,31,.15); color: #252b30; font-family: Arial, "Microsoft YaHei", sans-serif; text-align: left; zoom: var(--preview-scale); }
+.resume-header { position: relative; display: grid; grid-template-columns: 29mm minmax(0, 1fr); gap: 11mm; min-height: 39mm; align-items: center; margin: -15mm -16mm 3mm; padding: 8mm 16mm 7mm; overflow: hidden; border-bottom: 1px solid var(--resume-accent); background: #f7f8fa; }
+.resume-header::after { position: absolute; z-index: 0; inset: 0 0 0 43mm; background: var(--resume-accent); content: ''; }
+.resume-avatar { position: relative; z-index: 2; display: flex; width: 27mm; height: 34mm; align-items: center; justify-content: center; overflow: hidden; border: 1.5mm solid #fff; background: var(--resume-soft); box-shadow: 0 2px 8px rgba(28,32,38,.18); color: var(--resume-accent); font-size: 28px; font-weight: 800; transform: translateX(-6mm); }
+.resume-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.resume-identity { position: relative; z-index: 2; min-width: 0; color: #fff; }
+.resume-header h1 { margin: 0; font-size: 32px; line-height: 1.2; letter-spacing: 0; }
+.resume-header strong { display: block; margin-top: 5px; color: rgba(255,255,255,.9); font-size: 16px; }
+.resume-contacts { display: flex; flex-wrap: wrap; gap: 5px 18px; margin-top: 11px; color: rgba(255,255,255,.94); font-size: 11.5px; line-height: 1.5; }
+.resume-contacts span { min-width: 34%; }
+.header-line { position: absolute; z-index: 1; width: 74mm; height: 74mm; border: 1px solid rgba(255,255,255,.16); border-radius: 50%; pointer-events: none; }
+.line-one { top: -59mm; right: -6mm; }
+.line-two { top: -54mm; right: -14mm; }
+.resume-section { margin-top: 16px; }
+.resume-section h3 { margin: 0 0 9px; padding: 5px 9px; border-left: 4px solid var(--resume-accent); background: var(--resume-soft); color: var(--resume-accent); font-size: 15px; line-height: 1.3; }
+.resume-section p { margin: 5px 0; font-size: 13.5px; line-height: 1.72; }
+.resume-entry { margin-bottom: 13px; }
 .entry-heading, .entry-sub { display: flex; justify-content: space-between; gap: 12px; }
-.entry-heading { font-size: 11px; }
-.entry-heading span, .entry-sub { color: #656d76; font-size: 9.5px; }
+.entry-heading { align-items: baseline; font-size: 14px; }
+.entry-heading b { color: #24292f; font-size: 14px; }
+.entry-heading span, .entry-sub { color: #5f6872; font-size: 12px; line-height: 1.55; }
 .entry-sub em { font-style: normal; }
 .pre-line { white-space: pre-line; }
 .bullet-copy { padding-left: 10px; }
 .quality-panel { padding: 16px; }
 .quality-score { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid #e4e7eb; }
-.quality-score strong { font-size: 14px; }
-.quality-score p { margin: 5px 0 0; color: #747b85; font-size: 11px; line-height: 1.5; }
-.quality-list { display: grid; gap: 13px; padding: 18px 0; }
+.quality-score strong { font-size: 16px; }
+.quality-score p { margin: 6px 0 0; color: #68717c; font-size: 13px; line-height: 1.5; }
+.quality-list { display: grid; gap: 16px; padding: 20px 0; }
 .quality-list > div { display: flex; align-items: flex-start; gap: 8px; color: #a06c25; }
 .quality-list > div.passed { color: #347854; }
 .quality-list span { display: grid; gap: 3px; color: #34383d; }
-.quality-list b { font-size: 12px; }
-.quality-list small { color: #848b95; font-size: 10px; line-height: 1.4; }
+.quality-list b { font-size: 14px; }
+.quality-list small { color: #737c87; font-size: 12px; line-height: 1.5; }
 .quality-note { padding: 12px; border-left: 3px solid var(--resume-accent); background: #f5f6f8; }
-.quality-note b { font-size: 12px; }
-.quality-note p { margin: 5px 0 0; color: #666e78; font-size: 10px; line-height: 1.55; }
-@media (max-width: 1250px) { .builder-workspace { grid-template-columns: minmax(330px,.8fr) minmax(520px,1.2fr); } .quality-panel { grid-column: 1 / -1; } }
-@media (max-width: 860px) {
+.quality-note b { font-size: 14px; }
+.quality-note p { margin: 6px 0 0; color: #5e6772; font-size: 12px; line-height: 1.6; }
+@media screen and (max-width: 1150px) {
+  .builder-workspace { grid-template-columns: minmax(340px,.72fr) minmax(0,1.28fr); }
+  .quality-panel { display: grid; grid-column: 1 / -1; grid-template-columns: 240px minmax(0,1fr) 290px; gap: 20px; align-items: start; }
+  .quality-score { height: 100%; padding: 0 20px 0 0; border-right: 1px solid #e4e7eb; border-bottom: 0; }
+  .quality-list { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px 18px; padding: 0; }
+  .quality-note { align-self: stretch; }
+}
+@media screen and (max-width: 980px) {
   .builder-toolbar { grid-template-columns: 1fr; gap: 10px; padding: 10px 12px; }
   .save-status { display: none; }
-  .toolbar-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 6px; overflow: hidden; }
+  .toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 6px; overflow: hidden; }
   .toolbar-actions .el-button { width: 100%; padding: 8px 5px; font-size: 12px; }
   .builder-workspace { min-width: 0; grid-template-columns: minmax(0, 1fr); padding: 10px; overflow: hidden; }
+  .quality-panel { display: block; grid-column: auto; }
+  .quality-score { height: auto; padding: 0 0 16px; border-right: 0; border-bottom: 1px solid #e4e7eb; }
+  .quality-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); padding: 18px 0; }
   .editor-panel { min-height: 0; padding: 4px 12px 16px; }
   .preview-stage { min-width: 0; min-height: 0; padding: 10px; }
-  .resume-print-sheet { width: 100%; min-height: auto; padding: 9mm; }
+  .resume-print-sheet { width: 100%; min-height: auto; padding: 9mm; zoom: 1; }
+  .resume-header { grid-template-columns: 23mm minmax(0, 1fr); gap: 6mm; margin: -9mm -9mm 3mm; padding: 7mm 9mm 6mm; }
+  .resume-header::after { left: 34mm; }
+  .resume-avatar { width: 22mm; height: 28mm; transform: none; }
+  .resume-header h1 { font-size: 21px; }
+  .resume-contacts { gap: 3px 8px; font-size: 8px; }
   .two-columns { grid-template-columns: 1fr; }
 }
+@media screen and (max-width: 560px) {
+  .quality-list { grid-template-columns: 1fr; }
+}
 @media print {
-  :global(body *) { visibility: hidden !important; }
-  :global(.resume-print-sheet), :global(.resume-print-sheet *) { visibility: visible !important; }
-  :global(.resume-print-sheet) { position: absolute !important; top: 0; left: 0; width: 210mm !important; min-height: 297mm !important; margin: 0 !important; box-shadow: none !important; }
+  :global(html), :global(body), :global(#app) { width: 210mm !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+  :global(body > #app) { display: none !important; }
+  :global(.el-overlay), :global(.el-overlay-dialog), :global(.resume-builder-dialog), :global(.resume-builder-dialog .el-dialog__body) { position: static !important; display: block !important; width: 210mm !important; max-width: none !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+  .builder-toolbar, .editor-panel, .quality-panel { display: none !important; }
+  .resume-builder, .builder-workspace, .preview-stage { display: block !important; width: 210mm !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+  .resume-print-sheet { position: static !important; display: block !important; width: 210mm !important; min-height: 297mm !important; margin: 0 !important; box-shadow: none !important; transform: none !important; zoom: 1 !important; }
   @page { size: A4; margin: 0; }
 }
 </style>

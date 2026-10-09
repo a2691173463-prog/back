@@ -33,33 +33,19 @@ CREATE TABLE IF NOT EXISTS `interview_record` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
     `user_id` BIGINT NOT NULL COMMENT '所属用户ID',
     `resume_id` BIGINT NOT NULL COMMENT '关联简历ID',
-    `question_id` BIGINT DEFAULT NULL COMMENT '关联经典题目ID',
-    `chat_history` JSON COMMENT '对话历史记录(可选存库，主要放Redis)',
+    `interview_mode` VARCHAR(16) NOT NULL DEFAULT 'standard' COMMENT '面试模式 standard-标准面试 practice-专项训练',
+    `position_code` VARCHAR(40) NOT NULL DEFAULT 'GENERAL' COMMENT '岗位知识包编码',
+    `chat_history` JSON COMMENT '面试结束后从 LangGraph transcript 归档的完整对话记录',
     `score` INT DEFAULT NULL COMMENT '最终面试评分',
     `evaluation` TEXT DEFAULT NULL COMMENT '大模型面试评估报告',
+    `evaluation_skills` JSON DEFAULT NULL COMMENT '按有效作答证据生成的分项评分',
     `status` TINYINT NOT NULL DEFAULT 0 COMMENT '状态 0-进行中 1-已结束',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
-    KEY `idx_resume_id` (`resume_id`),
-    KEY `idx_question_id` (`question_id`)
+    KEY `idx_resume_id` (`resume_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟面试记录表';
-
--- 经典面试题库
-CREATE TABLE IF NOT EXISTS `question` (
-    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-    `title` VARCHAR(256) NOT NULL COMMENT '题目标题',
-    `category` VARCHAR(64) NOT NULL COMMENT '分类，如 Java, Spring, Redis, MySQL',
-    `difficulty` VARCHAR(16) NOT NULL COMMENT '难度 Easy, Medium, Hard',
-    `description` TEXT NOT NULL COMMENT '题目描述',
-    `reference_answer` TEXT NOT NULL COMMENT '参考答案',
-    `view_count` INT NOT NULL DEFAULT 0 COMMENT '浏览量',
-    `interview_count` INT NOT NULL DEFAULT 0 COMMENT '发起模拟面试次数',
-    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='经典面试题库';
 
 -- 简历模板表
 CREATE TABLE IF NOT EXISTS `resume_template` (

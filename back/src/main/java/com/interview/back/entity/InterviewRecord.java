@@ -13,12 +13,13 @@ public class InterviewRecord {
     private Long id;
     private Long userId;
     private Long resumeId;
-    private Long questionId;
+    private String interviewMode;
+    private String positionCode;
     private String chatHistory;
     private Integer score;
     private String evaluation;
+    private String evaluationSkills;
     private Integer status;
     private Date createTime;
     private Date updateTime;
 }
-

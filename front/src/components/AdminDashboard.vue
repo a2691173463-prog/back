@@ -2,55 +2,14 @@
   <div class="admin-dashboard-container glass-card">
     <div class="tab-header-row">
       <h2>⚙️ 管理员后台</h2>
-      <span class="subtitle">管理系统的题库和简历模板，并掌握系统的整体运行数据</span>
+      <span class="subtitle">管理简历模板，并掌握系统的整体运行数据</span>
     </div>
 
     <el-tabs v-model="activeSubTab" class="admin-tabs">
-      <!-- Tab 1: 题库管理 -->
-      <el-tab-pane label="题库管理" name="questions">
-        <div class="action-bar-admin">
-          <el-button type="primary" :prefix-icon="Plus" @click="openQuestionForm(null)">
-            ➕ 新增面试题
-          </el-button>
-        </div>
-
-        <el-table :data="questionList" style="width: 100%" v-loading="loading" class="custom-table">
-          <el-table-column prop="title" label="题目名称" min-width="350"></el-table-column>
-          <el-table-column prop="category" label="分类" min-width="180">
-            <template #default="scope">
-              <el-tag size="small">{{ scope.row.category }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="difficulty" label="难度" min-width="180">
-            <template #default="scope">
-              <el-tag size="small" :type="getDifficultyType(scope.row.difficulty)">
-                {{ getDifficultyLabel(scope.row.difficulty) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="viewCount" label="浏览量" min-width="180" align="center"></el-table-column>
-          <el-table-column prop="interviewCount" label="对练量" min-width="180" align="center"></el-table-column>
-          <el-table-column label="操作" min-width="220" fixed="right">
-            <template #default="scope">
-              <el-button type="primary" size="small" plain @click="openQuestionForm(scope.row)">编辑</el-button>
-              <el-button type="danger" size="small" plain @click="deleteQuestion(scope.row.id)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <!-- 分页 -->
-        <div class="pagination-container">
-          <el-pagination
-            v-model:current-page="queryParams.page"
-            v-model:page-size="queryParams.size"
-            :total="total"
-            layout="prev, pager, next"
-            @current-change="fetchQuestions"
-          />
-        </div>
+      <el-tab-pane label="知识库管理" name="knowledge">
+        <AdminKnowledgeBase />
       </el-tab-pane>
-
-      <!-- Tab 2: 模板管理 -->
+      <!-- Tab 1: 模板管理 -->
       <el-tab-pane label="模板管理" name="templates">
         <div class="action-bar-admin">
           <el-button type="primary" @click="openTemplateForm">
@@ -74,7 +33,7 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- Tab 3: 系统分析 -->
+      <!-- Tab 2: 系统分析 -->
       <el-tab-pane label="数据分析" name="analysis">
         <div class="dashboard-wrapper" v-loading="analysisLoading">
           <!-- 第一行: 四个核心指标卡片 -->
@@ -195,25 +154,6 @@
           <div class="rankings-grid">
             <div class="rank-card">
               <div class="rank-header">
-                <span>热门对练题目排行 (Top 5)</span>
-                <span class="rank-icons">🏆</span>
-              </div>
-              <div class="rank-list">
-                <div class="rank-item" v-for="(item, idx) in topQuestions" :key="idx">
-                  <div class="rank-info-row">
-                    <span class="rank-name">{{ item.title }}</span>
-                    <span class="rank-val">{{ item.count }} 次</span>
-                  </div>
-                  <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" :style="{ width: item.percentage + '%' }"></div>
-                  </div>
-                </div>
-                <div v-if="topQuestions.length === 0" class="empty-rank">暂无题目对练排行</div>
-              </div>
-            </div>
-
-            <div class="rank-card">
-              <div class="rank-header">
                 <span>简历诊断核心词频 (Top 5)</span>
                 <span class="rank-icons">🏷️</span>
               </div>
@@ -269,7 +209,7 @@
                 <div class="rank-item" v-for="(item, idx) in [
                   { name: '/api/app/chat/gen/code', count: '1.24s', pct: 95 },
                   { name: '/api/resume/diagnose', count: '890ms', pct: 68 },
-                  { name: '/api/questions/init-interview', count: '120ms', pct: 15 },
+                  { name: '/api/interview/init', count: '120ms', pct: 15 },
                   { name: '/api/user/login', count: '45ms', pct: 5 },
                   { name: '/api/templates/list', count: '12ms', pct: 1 }
                 ]" :key="idx">
@@ -287,47 +227,6 @@
         </div>
       </el-tab-pane>
     </el-tabs>
-
-    <!-- 弹窗：题库新增/编辑表单 -->
-    <el-dialog v-model="questionFormVisible" :title="questionForm.id ? '编辑面试题' : '新增面试题'" width="650px" class="glass-dialog">
-      <el-form :model="questionForm" label-position="top" class="admin-form">
-        <el-form-item label="题目标题" required>
-          <el-input v-model="questionForm.title" placeholder="如：HashMap 底层实现原理..." />
-        </el-form-item>
-        <div class="form-row">
-          <el-form-item label="技术分类" required style="flex: 1;">
-            <el-select v-model="questionForm.category" placeholder="选择分类" style="width: 100%;">
-              <el-option label="Java" value="Java" />
-              <el-option label="Spring" value="Spring" />
-              <el-option label="Redis" value="Redis" />
-              <el-option label="MySQL" value="MySQL" />
-              <el-option label="计算机网络" value="计算机网络" />
-              <el-option label="操作系统" value="操作系统" />
-              <el-option label="系统设计" value="系统设计" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="难度级别" required style="flex: 1;">
-            <el-select v-model="questionForm.difficulty" placeholder="选择难度" style="width: 100%;">
-              <el-option label="简单" value="Easy" />
-              <el-option label="中等" value="Medium" />
-              <el-option label="困难" value="Hard" />
-            </el-select>
-          </el-form-item>
-        </div>
-        <el-form-item label="题目具体描述" required>
-          <el-input type="textarea" :rows="4" v-model="questionForm.description" placeholder="请输入针对该题目的具体考察提问细节..." />
-        </el-form-item>
-        <el-form-item label="官方参考标准答案" required>
-          <el-input type="textarea" :rows="8" v-model="questionForm.referenceAnswer" placeholder="请输入该题的标准解题大纲或参考答案..." />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="questionFormVisible = false">取消</el-button>
-          <el-button type="primary" :loading="submitLoading" @click="saveQuestion">保存</el-button>
-        </div>
-      </template>
-    </el-dialog>
 
     <!-- 弹窗：模板新增表单 -->
     <el-dialog v-model="templateFormVisible" title="新增简历模板" width="550px" class="glass-dialog">
@@ -365,29 +264,18 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
+import AdminKnowledgeBase from './AdminKnowledgeBase.vue'
 
-const activeSubTab = ref('questions')
+const activeSubTab = ref('templates')
 
-
-// 1. 题库管理状态
-const loading = ref(false)
-const questionList = ref([])
-const total = ref(0)
-const queryParams = reactive({
-  page: 1,
-  size: 10
-})
-
-// 2. 模板管理状态
+// 1. 模板管理状态
 const templateLoading = ref(false)
 const templateList = ref([])
 
-// 3. 数据分析状态
+// 2. 数据分析状态
 const analysisLoading = ref(false)
-const topQuestions = ref<any[]>([])
 const stats = reactive({
   userCount: 0,
   resumeCount: 0,
@@ -396,16 +284,6 @@ const stats = reactive({
 
 // 表单弹窗状态
 const submitLoading = ref(false)
-const questionFormVisible = ref(false)
-const questionForm = reactive<any>({
-  id: null,
-  title: '',
-  category: '',
-  difficulty: '',
-  description: '',
-  referenceAnswer: ''
-})
-
 const templateFormVisible = ref(false)
 const templateForm = reactive<any>({
   name: '',
@@ -414,86 +292,6 @@ const templateForm = reactive<any>({
   downloadUrl: '',
   description: ''
 })
-
-// ==================== 题库逻辑 ====================
-const fetchQuestions = async () => {
-  loading.value = true
-  try {
-    const res = await axios.get('/api/questions/list', { params: queryParams })
-    if (res.data.code === 200) {
-      questionList.value = res.data.data.records
-      total.value = res.data.data.total
-    }
-  } catch (e) {
-    console.error(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-const openQuestionForm = (row: any | null) => {
-  if (row) {
-    questionForm.id = row.id
-    questionForm.title = row.title
-    questionForm.category = row.category
-    questionForm.difficulty = row.difficulty
-    questionForm.description = row.description
-    questionForm.referenceAnswer = row.referenceAnswer
-  } else {
-    questionForm.id = null
-    questionForm.title = ''
-    questionForm.category = ''
-    questionForm.difficulty = ''
-    questionForm.description = ''
-    questionForm.referenceAnswer = ''
-  }
-  questionFormVisible.value = true
-}
-
-const saveQuestion = async () => {
-  if (!questionForm.title || !questionForm.category || !questionForm.difficulty || !questionForm.description || !questionForm.referenceAnswer) {
-    ElMessage.warning('请填写所有必填字段')
-    return
-  }
-  submitLoading.value = true
-  try {
-    let res
-    if (questionForm.id) {
-      res = await axios.put('/api/admin/questions', questionForm)
-    } else {
-      res = await axios.post('/api/admin/questions', questionForm)
-    }
-    if (res.data.code === 200) {
-      ElMessage.success(questionForm.id ? '题目修改成功！' : '题目添加成功！')
-      questionFormVisible.value = false
-      fetchQuestions()
-    } else {
-      ElMessage.error(res.data.message)
-    }
-  } catch (e) {
-    ElMessage.error('保存失败')
-  } finally {
-    submitLoading.value = false
-  }
-}
-
-const deleteQuestion = (id: number) => {
-  ElMessageBox.confirm('确定要彻底删除该面试题吗？此操作不可逆且会清空相关缓存。', '警告', {
-    confirmButtonText: '确定删除',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    try {
-      const res = await axios.delete(`/api/admin/questions/${id}`)
-      if (res.data.code === 200) {
-        ElMessage.success('删除成功！')
-        fetchQuestions()
-      }
-    } catch (e) {
-      ElMessage.error('删除失败')
-    }
-  }).catch(() => {})
-}
 
 // ==================== 模板逻辑 ====================
 const fetchTemplates = async () => {
@@ -561,23 +359,13 @@ const deleteTemplate = (id: number) => {
 const fetchStats = async () => {
   analysisLoading.value = true
   try {
-    const [resumes, interviews, hot] = await Promise.all([
+    const [resumes, interviews] = await Promise.all([
       axios.get('/api/resume/list'),
-      axios.get('/api/interview/list'),
-      axios.get('/api/questions/hot')
+      axios.get('/api/interview/list')
     ])
     stats.resumeCount = resumes.data.data ? resumes.data.data.length : 0
     stats.interviewCount = interviews.data.data ? interviews.data.data.length : 0
     stats.userCount = Math.max(12, stats.resumeCount + 3)
-    
-    // 从真实的热门对练数据装载 Top 5 排行
-    const hotData = hot.data.data || []
-    const maxCount = hotData.length > 0 ? Math.max(...hotData.map((q: any) => q.interviewCount), 1) : 1
-    topQuestions.value = hotData.slice(0, 5).map((q: any) => ({
-      title: q.title,
-      count: q.interviewCount,
-      percentage: Math.round((q.interviewCount / maxCount) * 100)
-    }))
   } catch (e) {
     console.error(e)
   } finally {
@@ -586,22 +374,7 @@ const fetchStats = async () => {
   }
 }
 
-const getDifficultyLabel = (diff: string) => {
-  if (diff === 'Easy') return '简单'
-  if (diff === 'Medium') return '中等'
-  if (diff === 'Hard') return '困难'
-  return diff
-}
-
-const getDifficultyType = (diff: string) => {
-  if (diff === 'Easy') return 'success'
-  if (diff === 'Medium') return 'warning'
-  if (diff === 'Hard') return 'danger'
-  return 'info'
-}
-
 onMounted(() => {
-  fetchQuestions()
   fetchTemplates()
   fetchStats()
 })

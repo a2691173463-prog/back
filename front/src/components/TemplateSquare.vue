@@ -4,7 +4,7 @@
       <div>
         <p class="section-kicker">RESUME LIBRARY</p>
         <h2>简历模板</h2>
-        <p class="header-copy">选择适合岗位的清晰版式，再上传现有简历进行内容诊断。</p>
+        <p class="header-copy">选择贴近目标岗位的完整案例，参考表达后替换为自己的真实经历。</p>
       </div>
       <div class="library-summary" aria-label="模板统计">
         <strong>{{ templates.length }}</strong>
@@ -70,7 +70,7 @@
         <div class="template-details">
           <div class="template-meta">
             <span>{{ item.category || '通用' }}</span>
-            <span>单页优先</span>
+            <span>完整案例</span>
           </div>
           <h3>{{ item.name }}</h3>
           <p>{{ item.description || '结构清晰、便于招聘方快速浏览的标准简历模板。' }}</p>
@@ -78,8 +78,8 @@
             <span v-for="feature in getHighlights(item)" :key="feature">{{ feature }}</span>
           </div>
           <div class="card-actions">
-            <el-button :icon="Download" @click="downloadTemplate(item)">下载模板</el-button>
-            <el-button type="primary" :icon="ArrowRight" @click="useTemplate(item)">在线制作</el-button>
+            <el-button :icon="View" @click="openPreview(item)">查看完整示例</el-button>
+            <el-button type="primary" :icon="ArrowRight" @click="useTemplate(item)">使用此案例</el-button>
           </div>
         </div>
       </article>
@@ -133,7 +133,7 @@
           <dl>
             <div><dt>适用方向</dt><dd>{{ selectedTemplate.category || '通用岗位' }}</dd></div>
             <div><dt>推荐页数</dt><dd>1 页</dd></div>
-            <div><dt>文件格式</dt><dd>DOCX</dd></div>
+            <div><dt>使用方式</dt><dd>在线编辑 / PDF</dd></div>
           </dl>
           <div>
             <span class="sidebar-label">版式特点</span>
@@ -144,7 +144,7 @@
             </div>
           </div>
           <div class="preview-actions">
-            <el-button :icon="Download" @click="downloadTemplate(selectedTemplate)">下载 Word</el-button>
+            <el-button v-if="selectedTemplate.downloadUrl" :icon="Download" @click="downloadTemplate(selectedTemplate)">下载 Word</el-button>
             <el-button type="primary" :icon="ArrowRight" @click="useTemplate(selectedTemplate)">使用此模板</el-button>
           </div>
         </aside>
@@ -170,28 +170,19 @@ import { ArrowRight, Check, Download, Refresh, Search, View } from '@element-plu
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import ResumeBuilder from './ResumeBuilder.vue'
-
-interface ResumeTemplate {
-  id: number
-  name: string
-  category?: string
-  thumbnailUrl?: string
-  downloadUrl?: string
-  description?: string
-  createTime?: string
-}
+import { builtInResumeTemplates, getResumeExample, type TemplateInfo } from '../data/resumeExamples'
 
 const ALL_CATEGORIES = '全部岗位'
 const PAGE_SIZE = 9
 
 const loading = ref(false)
-const templates = ref<ResumeTemplate[]>([])
+const templates = ref<TemplateInfo[]>([])
 const keyword = ref('')
 const selectedCategory = ref(ALL_CATEGORIES)
 const sortBy = ref('latest')
 const currentPage = ref(1)
 const previewVisible = ref(false)
-const selectedTemplate = ref<ResumeTemplate | null>(null)
+const selectedTemplate = ref<TemplateInfo | null>(null)
 const editorVisible = ref(false)
 const failedImages = ref(new Set<number>())
 
@@ -229,16 +220,17 @@ const fetchTemplates = async () => {
   try {
     const response = await axios.get('/api/templates/list')
     if (response.data.code !== 200) throw new Error(response.data.message || '请求失败')
-    templates.value = response.data.data || []
+    templates.value = [...builtInResumeTemplates, ...(response.data.data || [])]
   } catch (error) {
     console.error('获取模板列表失败:', error)
-    ElMessage.error('模板加载失败，请稍后重试')
+    templates.value = [...builtInResumeTemplates]
+    ElMessage.warning('在线模板暂未加载，已展示内置完整案例')
   } finally {
     loading.value = false
   }
 }
 
-const hasRealPreview = (item: ResumeTemplate) => {
+const hasRealPreview = (item: TemplateInfo) => {
   const url = item.thumbnailUrl || ''
   return Boolean(url) && !url.includes('icons8.com')
 }
@@ -247,19 +239,19 @@ const markImageFailed = (id: number) => {
   failedImages.value = new Set([...failedImages.value, id])
 }
 
-const getHighlights = (item: ResumeTemplate) => {
+const getHighlights = (item: TemplateInfo) => {
   const category = item.category || ''
   if (/PM|产品/i.test(category)) return ['量化成果', '协作能力', '重点清晰']
   if (/设计/i.test(category)) return ['作品突出', '视觉有序', '阅读流畅']
   return ['项目突出', 'ATS 友好', '适合校招']
 }
 
-const openPreview = (item: ResumeTemplate) => {
+const openPreview = (item: TemplateInfo) => {
   selectedTemplate.value = item
   previewVisible.value = true
 }
 
-const downloadTemplate = (item: ResumeTemplate) => {
+const downloadTemplate = (item: TemplateInfo) => {
   if (!item.downloadUrl) {
     ElMessage.warning('该模板暂未配置下载文件')
     return
@@ -267,7 +259,7 @@ const downloadTemplate = (item: ResumeTemplate) => {
   window.open(item.downloadUrl, '_blank', 'noopener,noreferrer')
 }
 
-const useTemplate = (item: ResumeTemplate | null) => {
+const useTemplate = (item: TemplateInfo | null) => {
   if (!item) return
   selectedTemplate.value = item
   previewVisible.value = false
@@ -283,22 +275,36 @@ const resetFilters = () => {
 const DocumentPreview = defineComponent({
   name: 'DocumentPreview',
   props: {
-    template: { type: Object as () => ResumeTemplate, required: true },
+    template: { type: Object as () => TemplateInfo, required: true },
     large: Boolean
   },
   setup(props) {
-    return () => h('div', {
-      class: ['document-preview', { large: props.large, product: /PM|产品/i.test(props.template.category || '') }]
-    }, [
-      h('div', { class: 'document-name' }, '姓名 NAME'),
-      h('div', { class: 'document-role' }, props.template.category || '求职方向'),
-      h('div', { class: 'contact-lines' }, [h('i'), h('i'), h('i')]),
-      h('section', [h('b', '教育经历'), h('span'), h('span')]),
-      h('section', [h('b', '项目经历'), h('span', { class: 'long' }), h('span'), h('span', { class: 'medium' })]),
-      h('section', [h('b', /PM|产品/i.test(props.template.category || '') ? '实践经历' : '实习经历'), h('span', { class: 'long' }), h('span', { class: 'medium' })]),
-      h('section', [h('b', '专业技能'), h('span'), h('span', { class: 'long' })]),
-      h('section', [h('b', '荣誉奖项'), h('span', { class: 'medium' })])
-    ])
+    return () => {
+      const content = getResumeExample(props.template)
+      const education = content.education[0]
+      const project = content.projects[0]
+      const experience = content.experiences[0]
+      const category = props.template.category || ''
+      const previewAccent = /PM|产品/i.test(category) ? '#8b477d' : /Agent|算法|人工智能/i.test(category) ? '#345d8c' : /前端|设计/i.test(category) ? '#267776' : /数据/i.test(category) ? '#376e59' : /测试/i.test(category) ? '#805b32' : /运维/i.test(category) ? '#526070' : '#b52f55'
+      return h('div', {
+        class: ['document-preview', { large: props.large, product: /PM|产品/i.test(category) }],
+        style: { '--preview-accent': previewAccent, '--preview-soft': `${previewAccent}14` }
+      }, [
+        h('div', { class: 'document-hero' }, [
+          h('div', { class: 'document-avatar' }, content.personal.name.slice(0, 1)),
+          h('div', { class: 'document-identity' }, [
+            h('div', { class: 'document-name' }, content.personal.name),
+            h('div', { class: 'document-role' }, content.personal.targetRole),
+            h('p', { class: 'document-contact' }, `${content.personal.phone} · ${content.personal.email} · ${content.personal.location}`)
+          ])
+        ]),
+        h('section', [h('b', '个人优势'), h('p', content.summary)]),
+        h('section', [h('b', '教育经历'), h('strong', `${education.school} · ${education.major}`), h('p', education.details)]),
+        h('section', [h('b', '项目经历'), h('strong', project.name), h('p', project.description)]),
+        experience ? h('section', [h('b', '实习经历'), h('strong', `${experience.company} · ${experience.role}`), h('p', experience.description)]) : null,
+        h('section', [h('b', '专业技能'), h('p', content.skills)])
+      ])
+    }
   }
 })
 
@@ -650,107 +656,6 @@ onMounted(fetchTemplates)
   margin-top: auto;
 }
 
-.document-preview {
-  box-sizing: border-box;
-  padding: 18px 15px;
-  color: #26313a;
-  text-align: left;
-}
-
-.document-preview.large {
-  padding: 45px 38px;
-}
-
-.document-name {
-  color: #202a33;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.document-preview.large .document-name {
-  font-size: 24px;
-}
-
-.document-role {
-  margin-top: 2px;
-  color: #3c7f67;
-  font-size: 6px;
-  font-weight: 700;
-}
-
-.document-preview.product .document-role,
-.document-preview.product section b {
-  color: #8162a6;
-}
-
-.document-preview.large .document-role {
-  margin-top: 5px;
-  font-size: 12px;
-}
-
-.contact-lines {
-  display: flex;
-  gap: 4px;
-  margin: 8px 0 14px;
-}
-
-.contact-lines i {
-  width: 24%;
-  height: 2px;
-  background: #c8cdd2;
-}
-
-.document-preview.large .contact-lines {
-  gap: 10px;
-  margin: 18px 0 34px;
-}
-
-.document-preview.large .contact-lines i {
-  height: 4px;
-}
-
-.document-preview section {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-top: 12px;
-}
-
-.document-preview section b {
-  padding-bottom: 3px;
-  border-bottom: 1px solid #3c7f67;
-  color: #3c7f67;
-  font-size: 6px;
-}
-
-.document-preview section span {
-  width: 72%;
-  height: 3px;
-  background: #cbd1d7;
-}
-
-.document-preview section span.long {
-  width: 100%;
-}
-
-.document-preview section span.medium {
-  width: 86%;
-}
-
-.document-preview.large section {
-  gap: 11px;
-  margin-top: 30px;
-}
-
-.document-preview.large section b {
-  padding-bottom: 8px;
-  font-size: 13px;
-}
-
-.document-preview.large section span {
-  height: 7px;
-}
-
 @media (max-width: 1100px) {
   .templates-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -817,7 +722,7 @@ onMounted(fetchTemplates)
 
 <style>
 .resume-builder-dialog.el-dialog {
-  padding: 0;
+  padding: 0 !important;
   background: #f1f3f5;
 }
 
@@ -826,6 +731,31 @@ onMounted(fetchTemplates)
 }
 
 .resume-builder-dialog .el-dialog__body {
-  padding: 0;
+  width: 100%;
+  padding: 0 !important;
 }
+
+/* DocumentPreview is a runtime child component, so its inner nodes need stable global selectors. */
+.document-preview { box-sizing: border-box; overflow: hidden; color: #26313a; text-align: left; --preview-accent: #b52f55; --preview-soft: #b52f5514; }
+.document-preview .document-hero { position: relative; display: grid; grid-template-columns: 35px minmax(0,1fr); gap: 9px; min-height: 57px; align-items: center; padding: 9px 10px; overflow: hidden; background: var(--preview-accent); }
+.document-preview .document-hero::after { position: absolute; top: -55px; right: -18px; width: 92px; height: 92px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; content: ''; }
+.document-preview .document-avatar { position: relative; z-index: 1; display: flex; width: 31px; height: 39px; align-items: center; justify-content: center; border: 2px solid #fff; background: #f6f7f8; color: var(--preview-accent); font-size: 11px; font-weight: 800; box-shadow: 0 1px 4px rgba(0,0,0,.16); }
+.document-preview .document-identity { position: relative; z-index: 1; min-width: 0; color: #fff; }
+.document-preview .document-name { font-size: 9px; font-weight: 800; }
+.document-preview .document-role { margin-top: 1px; color: rgba(255,255,255,.9); font-size: 4.5px; font-weight: 700; }
+.document-preview .document-contact { margin: 4px 0 0; overflow: hidden; color: rgba(255,255,255,.88); font-size: 3.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.document-preview section { display: flex; flex-direction: column; gap: 2px; margin: 5px 10px 0; }
+.document-preview section b { padding: 2px 4px; border-left: 2px solid var(--preview-accent); background: var(--preview-soft); color: var(--preview-accent); font-size: 4.5px; line-height: 1.2; }
+.document-preview section strong { overflow: hidden; font-size: 4px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.document-preview section p { display: -webkit-box; margin: 0; overflow: hidden; color: #626a73; font-size: 3.5px; line-height: 1.45; white-space: pre-line; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.document-preview.large { overflow: visible; }
+.document-preview.large .document-hero { grid-template-columns: 86px minmax(0,1fr); gap: 24px; min-height: 145px; padding: 24px 30px; }
+.document-preview.large .document-avatar { width: 76px; height: 96px; border-width: 4px; font-size: 26px; }
+.document-preview.large .document-name { font-size: 23px; }
+.document-preview.large .document-role { margin-top: 4px; font-size: 11px; }
+.document-preview.large .document-contact { margin-top: 10px; font-size: 8px; }
+.document-preview.large section { gap: 5px; margin: 14px 30px 0; }
+.document-preview.large section b { padding: 5px 8px; border-left-width: 3px; font-size: 11px; }
+.document-preview.large section strong { font-size: 9px; }
+.document-preview.large section p { font-size: 8px; line-height: 1.55; -webkit-line-clamp: 4; }
 </style>

@@ -47,7 +47,7 @@ public class PythonAgentClient implements AiClient {
         body.put("parsed_text", parsedText == null ? "" : parsedText);
         body.put("image_base64", imageBase64);
         body.put("image_mime_type", imageMimeType == null ? "image/png" : imageMimeType);
-        return postForContent("/resume/diagnose", body);
+        return postForContentOrThrow("/resume/diagnose", body);
     }
 
     @Override
@@ -72,6 +72,96 @@ public class PythonAgentClient implements AiClient {
         Map<String, Object> body = new HashMap<>();
         body.put("messages", messages);
         return postForContent("/interview/evaluate", body);
+    }
+
+    @Override
+    public String finalizeInterview(Long interviewId, Long userId, Long resumeId,
+                                    String interviewMode, String positionCode) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("thread_id", interviewId.toString());
+        body.put("user_id", userId);
+        body.put("resume_id", resumeId);
+        body.put("interview_mode", interviewMode);
+        body.put("position_code", positionCode);
+        return postForRawBody("/agent/interview/finalize", body);
+    }
+
+    @Override
+    public Map<String, Object> addKnowledgeDocument(Long ownerUserId, String title,
+                                                     String fileName, String category, String content,
+                                                     String scope, String positionCode) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("owner_user_id", ownerUserId);
+        body.put("title", title);
+        body.put("file_name", fileName);
+        body.put("category", category);
+        body.put("content", content);
+        body.put("scope", scope);
+        body.put("position_code", positionCode);
+        body.put("source_type", "PRIVATE".equals(scope) ? "USER_UPLOAD" : "ADMIN_UPLOAD");
+        return postForMap("/knowledge/documents", body);
+    }
+
+    @Override
+    public List<Map<String, Object>> listKnowledgeDocuments(Long ownerUserId,
+                                                             boolean includeShared,
+                                                             boolean sharedOnly) {
+        try (cn.hutool.http.HttpResponse response = cn.hutool.http.HttpRequest
+                .get(endpoint("/knowledge/documents?owner_user_id=" + ownerUserId
+                        + "&include_shared=" + includeShared + "&shared_only=" + sharedOnly))
+                .timeout(aiProviderConfig.getPythonAgent().getTimeoutSeconds() * 1000)
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException(
+                        "Python agent returned " + response.getStatus() + ": " + response.body());
+            }
+            return objectMapper.readValue(
+                    response.body(),
+                    new TypeReference<List<Map<String, Object>>>() {
+                    });
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to list knowledge documents", e);
+        }
+    }
+
+    @Override
+    public boolean deleteKnowledgeDocument(String documentId, Long ownerUserId,
+                                            boolean allowShared) {
+        try (cn.hutool.http.HttpResponse response = cn.hutool.http.HttpRequest
+                .delete(endpoint("/knowledge/documents/" + documentId
+                        + "?owner_user_id=" + ownerUserId
+                        + "&allow_shared=" + allowShared))
+                .timeout(aiProviderConfig.getPythonAgent().getTimeoutSeconds() * 1000)
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException(
+                        "Python agent returned " + response.getStatus() + ": " + response.body());
+            }
+            Map<String, Object> result = objectMapper.readValue(
+                    response.body(), new TypeReference<Map<String, Object>>() {
+                    });
+            return Boolean.TRUE.equals(result.get("deleted"));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to delete knowledge document " + documentId, e);
+        }
+    }
+
+    @Override
+    public Map<String, Object> getKnowledgeRetrievalStats() {
+        try (cn.hutool.http.HttpResponse response = cn.hutool.http.HttpRequest
+                .get(endpoint("/knowledge/stats"))
+                .timeout(aiProviderConfig.getPythonAgent().getTimeoutSeconds() * 1000)
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException(
+                        "Python agent returned " + response.getStatus() + ": " + response.body());
+            }
+            return objectMapper.readValue(
+                    response.body(), new TypeReference<Map<String, Object>>() {
+                    });
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load knowledge retrieval statistics", e);
+        }
     }
 
     @Override
@@ -124,11 +214,14 @@ public class PythonAgentClient implements AiClient {
 
     @Override
     public void initializeInterviewThread(Long interviewId, Long userId, Long resumeId,
+                                          String interviewMode, String positionCode,
                                           String systemPrompt, String greeting) {
         Map<String, Object> body = new HashMap<>();
         body.put("thread_id", interviewId.toString());
         body.put("user_id", userId);
         body.put("resume_id", resumeId);
+        body.put("interview_mode", interviewMode);
+        body.put("position_code", positionCode);
         body.put("system_prompt", systemPrompt);
         body.put("greeting", greeting);
         post("/agent/threads", body);
@@ -136,11 +229,14 @@ public class PythonAgentClient implements AiClient {
 
     @Override
     public void streamInterview(Long interviewId, Long userId, Long resumeId,
+                                String interviewMode, String positionCode,
                                 String message, SseEmitter emitter) {
         Map<String, Object> body = new HashMap<>();
         body.put("thread_id", interviewId.toString());
         body.put("user_id", userId);
         body.put("resume_id", resumeId);
+        body.put("interview_mode", interviewMode);
+        body.put("position_code", positionCode);
         body.put("message", message);
         streamRequest("/agent/interview/stream", body, emitter);
     }
@@ -258,6 +354,67 @@ public class PythonAgentClient implements AiClient {
         } catch (Exception e) {
             log.error("Failed to call Python agent, path={}", path, e);
             return "请求大模型失败，请稍后再试。";
+        }
+    }
+
+    private Map<String, Object> postForMap(String path, Map<String, Object> body) {
+        try (cn.hutool.http.HttpResponse response = cn.hutool.http.HttpRequest.post(endpoint(path))
+                .timeout(aiProviderConfig.getPythonAgent().getTimeoutSeconds() * 1000)
+                .header("Content-Type", "application/json; charset=utf-8")
+                .body(JSONUtil.toJsonStr(body))
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException(
+                        "Python agent returned " + response.getStatus() + ": " + response.body());
+            }
+            return objectMapper.readValue(
+                    response.body(), new TypeReference<Map<String, Object>>() {
+                    });
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to call Python agent, path=" + path, e);
+        }
+    }
+
+    private String postForContentOrThrow(String path, Map<String, Object> body) {
+        try (cn.hutool.http.HttpResponse response = cn.hutool.http.HttpRequest.post(endpoint(path))
+                .timeout(aiProviderConfig.getPythonAgent().getTimeoutSeconds() * 1000)
+                .header("Content-Type", "application/json")
+                .body(JSONUtil.toJsonStr(body))
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException(
+                        "Python agent returned " + response.getStatus() + ": " + response.body()
+                );
+            }
+            Map<String, Object> responseBody = objectMapper.readValue(
+                    response.body(),
+                    new TypeReference<Map<String, Object>>() {
+                    }
+            );
+            Object content = responseBody.get("content");
+            if (content == null || content.toString().isBlank()) {
+                throw new IllegalStateException("Python agent returned empty content");
+            }
+            return content.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to call Python agent, path=" + path, e);
+        }
+    }
+
+    private String postForRawBody(String path, Map<String, Object> body) {
+        try (cn.hutool.http.HttpResponse response = cn.hutool.http.HttpRequest.post(endpoint(path))
+                .timeout(aiProviderConfig.getPythonAgent().getTimeoutSeconds() * 1000)
+                .header("Content-Type", "application/json; charset=utf-8")
+                .body(JSONUtil.toJsonStr(body))
+                .execute()) {
+            if (!response.isOk()) {
+                throw new IllegalStateException(
+                        "Python agent returned " + response.getStatus() + ": " + response.body()
+                );
+            }
+            return response.body();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to call Python agent, path=" + path, e);
         }
     }
 

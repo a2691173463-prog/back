@@ -27,9 +27,6 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/user/login",
                         "/api/user/register",
-                        "/api/questions/list",
-                        "/api/questions/{\\d+}",
-                        "/api/questions/hot",
                         "/api/templates/list"
                 )
                 .order(1);
@@ -40,4 +37,3 @@ public class WebConfig implements WebMvcConfigurer {
                 .order(2);
     }
 }
-

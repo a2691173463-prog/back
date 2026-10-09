@@ -12,9 +12,11 @@ public interface AiClient {
 
     void streamChat(List<Map<String, Object>> messages, SseEmitter emitter);
 
-    void initializeInterviewThread(Long interviewId, Long userId, Long resumeId, String systemPrompt, String greeting);
+    void initializeInterviewThread(Long interviewId, Long userId, Long resumeId, String interviewMode,
+                                   String positionCode, String systemPrompt, String greeting);
 
-    void streamInterview(Long interviewId, Long userId, Long resumeId, String message, SseEmitter emitter);
+    void streamInterview(Long interviewId, Long userId, Long resumeId, String interviewMode,
+                         String positionCode, String message, SseEmitter emitter);
 
     void deleteInterviewThread(Long interviewId);
 
@@ -29,4 +31,18 @@ public interface AiClient {
     String summarizeInterview(String roundContent, String existingSummary, int maxChars);
 
     String evaluateInterview(List<Map<String, Object>> messages);
+
+    String finalizeInterview(Long interviewId, Long userId, Long resumeId, String interviewMode,
+                             String positionCode);
+
+    Map<String, Object> addKnowledgeDocument(Long ownerUserId, String title, String fileName,
+                                             String category, String content, String scope,
+                                             String positionCode);
+
+    List<Map<String, Object>> listKnowledgeDocuments(Long ownerUserId, boolean includeShared,
+                                                     boolean sharedOnly);
+
+    boolean deleteKnowledgeDocument(String documentId, Long ownerUserId, boolean allowShared);
+
+    Map<String, Object> getKnowledgeRetrievalStats();
 }

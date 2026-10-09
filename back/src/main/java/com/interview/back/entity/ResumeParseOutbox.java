@@ -4,20 +4,21 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
+
 import java.util.Date;
 
 @Data
-@TableName("question")
-public class Question {
+@TableName("resume_parse_outbox")
+public class ResumeParseOutbox {
+
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String title;
-    private String category;
-    private String difficulty;
-    private String description;
-    private String referenceAnswer;
-    private Integer viewCount;
-    private Integer interviewCount;
+    private String messageId;
+    private Long resumeId;
+    private Integer status;
+    private Integer retryCount;
+    private Date nextRetryTime;
+    private String lastError;
     private Date createTime;
     private Date updateTime;
 }

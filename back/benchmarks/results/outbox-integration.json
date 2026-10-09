@@ -1,0 +1,24 @@
+{
+  "runId": "1e38a10911ce",
+  "messageFormat": "json-task",
+  "submissionMode": "outbox",
+  "fileMode": "valid",
+  "tasks": 3,
+  "elapsedSeconds": 3.063,
+  "throughputTasksPerSecond": 0.98,
+  "success": 3,
+  "failed": 0,
+  "unfinished": 0,
+  "rabbitConsumers": 0,
+  "rabbitPrefetch": [
+    1,
+    1,
+    1
+  ],
+  "mockAiRequests": 3,
+  "mockAiMaxConcurrency": 3,
+  "deadLetterMessagesAdded": 0,
+  "outboxStatuses": {
+    "1": 3
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "runId": "ebee61397eaa",
+  "messageFormat": "json-task",
+  "submissionMode": "direct",
+  "fileMode": "valid",
+  "tasks": 1,
+  "elapsedSeconds": 9.407,
+  "throughputTasksPerSecond": 0.106,
+  "success": 1,
+  "failed": 0,
+  "unfinished": 0,
+  "rabbitConsumers": 3,
+  "rabbitPrefetch": [
+    1,
+    1,
+    1
+  ],
+  "mockAiRequests": 3,
+  "mockAiMaxConcurrency": 1
+}

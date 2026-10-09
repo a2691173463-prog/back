@@ -29,17 +29,17 @@ START -> interviewer -> tools -> interviewer -> END
 
 - `get_resume_summary`
 - `get_user_weak_skills`
-- `search_question_bank`
+- `search_interview_knowledge`
 
 工具不让模型传入 `userId` 或 `resumeId`，这两个值由可信的 `InterviewContext` 注入，避免模型越权查询其他用户数据。
 
 工具使用 `Command(update=...)` 同时返回 `ToolMessage` 并更新状态。例如简历工具成功后写入 `resume_loaded=true`，后续节点不再重复查询简历。
 
-Python 不直接访问 MySQL。工具通过带内部密钥的 Java 只读接口读取业务数据，数据库权限和领域规则仍由 Spring Boot 管理。
+Python 不直接访问 MySQL。简历和画像工具通过带内部密钥的 Java 只读接口读取业务数据；知识库工具访问 PostgreSQL/pgvector，并按运行时注入的 `userId` 隔离用户文档。
 
 ## 4. Checkpointer 恢复与记录导出
 
-FastAPI 使用异步 `AsyncSqliteSaver`，以 `interviewId` 作为 `thread_id` 保存每轮图状态。
+FastAPI 使用连接池版 `AsyncPostgresSaver`，以 `interviewId` 作为 `thread_id` 保存每轮图状态。
 
 继续面试时，Java 会优先从 Checkpointer 导出的 `transcript` 恢复前端问答；旧 Redis 记录作为兼容回退。结束面试时，如果 Redis 历史不存在，也可以使用 Checkpointer 中的原始问答完成评估。
 

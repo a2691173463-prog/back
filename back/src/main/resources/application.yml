@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: back
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 105MB
   config:
     import:
       # Support running from either the back directory or the repository root.
@@ -20,6 +24,21 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    connection-timeout: 5s
+    requested-heartbeat: 30s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        concurrency: 3
+        max-concurrency: 6
+        prefetch: 1
+        default-requeue-rejected: false
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
@@ -36,3 +55,12 @@ ai:
     base-url: http://localhost:8000
     timeout-seconds: 120
   internal-secret: ${AI_INTERNAL_SECRET:local-agent-secret-change-me}
+
+mq:
+  resume:
+    publisher-max-attempts: 3
+    confirm-timeout-seconds: 5
+    outbox-max-attempts: 10
+    outbox-dispatch-enabled: true
+    outbox-scan-interval-ms: 10000
+    outbox-initial-delay-ms: 10000
