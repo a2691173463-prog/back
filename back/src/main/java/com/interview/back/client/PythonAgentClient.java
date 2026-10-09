@@ -10,10 +10,16 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -22,10 +28,12 @@ public class PythonAgentClient implements AiClient {
 
     private final AiProviderConfig aiProviderConfig;
     private final ObjectMapper objectMapper;
+    private final HttpClient asyncHttpClient;
 
     public PythonAgentClient(AiProviderConfig aiProviderConfig, ObjectMapper objectMapper) {
         this.aiProviderConfig = aiProviderConfig;
         this.objectMapper = objectMapper;
+        this.asyncHttpClient = HttpClient.newHttpClient();
     }
 
     @Override
@@ -48,6 +56,43 @@ public class PythonAgentClient implements AiClient {
         body.put("image_base64", imageBase64);
         body.put("image_mime_type", imageMimeType == null ? "image/png" : imageMimeType);
         return postForContentOrThrow("/resume/diagnose", body);
+    }
+
+    @Override
+    public CompletableFuture<String> diagnoseResumeAsync(
+            String parsedText, String imageBase64, String imageMimeType
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("parsed_text", parsedText == null ? "" : parsedText);
+        body.put("image_base64", imageBase64);
+        body.put("image_mime_type", imageMimeType == null ? "image/png" : imageMimeType);
+        HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint("/resume/diagnose")))
+                .timeout(Duration.ofSeconds(aiProviderConfig.getPythonAgent().getTimeoutSeconds()))
+                .header("Content-Type", "application/json; charset=utf-8")
+                .POST(HttpRequest.BodyPublishers.ofString(JSONUtil.toJsonStr(body), StandardCharsets.UTF_8))
+                .build();
+        return asyncHttpClient.sendAsync(
+                        request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                )
+                .thenApply(response -> {
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        throw new IllegalStateException(
+                                "Python agent returned " + response.statusCode() + ": " + response.body()
+                        );
+                    }
+                    try {
+                        Map<String, Object> responseBody = objectMapper.readValue(
+                                response.body(), new TypeReference<Map<String, Object>>() {}
+                        );
+                        Object content = responseBody.get("content");
+                        if (content == null || content.toString().isBlank()) {
+                            throw new IllegalStateException("Python agent returned empty content");
+                        }
+                        return content.toString();
+                    } catch (Exception e) {
+                        throw new IllegalStateException("Invalid Python agent diagnosis response", e);
+                    }
+                });
     }
 
     @Override

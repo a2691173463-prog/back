@@ -34,10 +34,10 @@ spring:
       mandatory: true
     listener:
       simple:
-        acknowledge-mode: auto
-        concurrency: 3
-        max-concurrency: 6
-        prefetch: 1
+        acknowledge-mode: manual
+        concurrency: 1
+        max-concurrency: 1
+        prefetch: 3
         default-requeue-rejected: false
 
 mybatis-plus:

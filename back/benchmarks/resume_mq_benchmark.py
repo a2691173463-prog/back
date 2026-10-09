@@ -278,11 +278,21 @@ def main() -> None:
             time.sleep(0.1)
 
         after_metrics = mock_metrics()
-        queue_after = rabbit_request(
-            "queues/%2F/" + urllib.parse.quote(QUEUE_NAME, safe=""),
-            args.rabbit_user,
-            args.rabbit_password,
-        )
+        # A terminal database status is not sufficient: the async listener
+        # must also finish its RabbitMQ ACK/NACK before this run is complete.
+        queue_deadline = time.monotonic() + 15
+        while True:
+            queue_after = rabbit_request(
+                "queues/%2F/" + urllib.parse.quote(QUEUE_NAME, safe=""),
+                args.rabbit_user,
+                args.rabbit_password,
+            )
+            if (int(queue_after.get("messages_ready", 0)) == 0
+                    and int(queue_after.get("messages_unacknowledged", 0)) == 0):
+                break
+            if time.monotonic() >= queue_deadline:
+                break
+            time.sleep(0.1)
         result = {
             "runId": run_id,
             "messageFormat": args.message_format,
@@ -302,6 +312,8 @@ def main() -> None:
                 detail.get("prefetch_count")
                 for detail in queue_after.get("consumer_details", [])
             ],
+            "rabbitReady": int(queue_after.get("messages_ready", 0)),
+            "rabbitUnacked": int(queue_after.get("messages_unacknowledged", 0)),
             "mockAiRequests": after_metrics["total"] - before_metrics["total"],
             "mockAiMaxConcurrency": after_metrics["max_active"],
             "deadLetterMessagesAdded": max(0, dead_letter_delta),
@@ -326,6 +338,14 @@ def main() -> None:
             output_path = pathlib.Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(output + "\n", encoding="utf-8")
+        expected_success = args.count if args.file_mode == "valid" else 0
+        expected_failure = args.count if args.file_mode == "missing" else 0
+        if (result["success"] != expected_success
+                or result["failed"] != expected_failure
+                or result["unfinished"] != 0
+                or result["rabbitReady"] != 0
+                or result["rabbitUnacked"] != 0):
+            raise AssertionError("Resume MQ benchmark did not reach the expected terminal state")
     finally:
         mysql(
             "DELETE FROM resume_parse_outbox "

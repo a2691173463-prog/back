@@ -31,7 +31,7 @@ async def profile_diagnosis():
     print("\n[测试 1] 发起【纯文本】简历诊断...")
     t0 = time.time()
     try:
-        res_text = resume_diagnosis(parsed_text=sample_text, image_base64=None, image_mime_type="image/png")
+        res_text = await resume_diagnosis(parsed_text=sample_text, image_base64=None, image_mime_type="image/png")
         t1 = time.time()
         print(f"✅ 纯文本诊断成功！耗时: {t1 - t0:.2f} 秒")
         print(f"返回结果预览: {res_text[:150]}...")
@@ -44,7 +44,7 @@ async def profile_diagnosis():
     print("\n[测试 2] 发起【带图片 (Vision 模型)】简历诊断...")
     t2 = time.time()
     try:
-        res_vision = resume_diagnosis(
+        res_vision = await resume_diagnosis(
             parsed_text=sample_text,
             image_base64=tiny_image_base64,
             image_mime_type="image/png",

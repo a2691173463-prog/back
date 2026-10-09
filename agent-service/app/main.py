@@ -160,10 +160,10 @@ def vision(request: VisionRequest) -> ChatResponse:
 
 
 @app.post("/resume/diagnose", response_model=ChatResponse)
-def diagnose_resume(request: ResumeDiagnosisRequest) -> ChatResponse:
+async def diagnose_resume(request: ResumeDiagnosisRequest) -> ChatResponse:
     try:
         return ChatResponse(
-            content=llm_client.resume_diagnosis(
+            content=await llm_client.resume_diagnosis(
                 request.parsed_text,
                 request.image_base64,
                 request.image_mime_type,

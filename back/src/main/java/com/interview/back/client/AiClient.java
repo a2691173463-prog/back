@@ -4,6 +4,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public interface AiClient {
     String chat(List<Map<String, String>> messages);
@@ -25,6 +26,8 @@ public interface AiClient {
     Map<String, Object> getInterviewThreadState(Long interviewId);
 
     String diagnoseResume(String parsedText, String imageBase64, String imageMimeType);
+
+    CompletableFuture<String> diagnoseResumeAsync(String parsedText, String imageBase64, String imageMimeType);
 
     String optimizeResumeSection(String sectionType, String targetRole, String content);
 

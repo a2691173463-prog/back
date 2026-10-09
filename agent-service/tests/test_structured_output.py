@@ -1,3 +1,4 @@
+import asyncio
 import json
 import unittest
 from unittest.mock import patch
@@ -96,11 +97,17 @@ class VisionJsonModel:
                     "parsing_error": None,
                 }
 
+            async def ainvoke(self, messages):
+                return self.invoke(messages)
+
         return VisionStructuredRunnable()
 
     def invoke(self, _messages):
         self.raw_calls += 1
         return AIMessage(content=self.content)
+
+    async def ainvoke(self, messages):
+        return self.invoke(messages)
 
 
 class StructuredOutputContractTest(unittest.TestCase):
@@ -194,11 +201,11 @@ class StructuredOutputContractTest(unittest.TestCase):
         model = NativeStructuredModel(diagnosis)
 
         with patch.object(llm_client, "_model", return_value=model):
-            raw = llm_client.resume_diagnosis(
+            raw = asyncio.run(llm_client.resume_diagnosis(
                 parsed_text="Java 后端项目",
                 image_base64=None,
                 image_mime_type="image/png",
-            )
+            ))
 
         self.assertEqual(diagnosis.model_dump(), json.loads(raw))
 
@@ -209,11 +216,11 @@ class StructuredOutputContractTest(unittest.TestCase):
         )
 
         with patch.object(llm_client, "_model", return_value=model):
-            raw = llm_client.resume_diagnosis(
+            raw = asyncio.run(llm_client.resume_diagnosis(
                 parsed_text="Java 后端简历",
                 image_base64="synthetic-image",
                 image_mime_type="image/png",
-            )
+            ))
 
         self.assertEqual(["结构清晰"], json.loads(raw)["advantages"])
         self.assertEqual(0, model.raw_calls)
@@ -231,17 +238,17 @@ class StructuredOutputContractTest(unittest.TestCase):
         model = VisionJsonModel("当前模型暂时只返回了普通诊断文本。")
 
         with patch.object(llm_client, "_model", return_value=model):
-            raw = llm_client.resume_diagnosis(
+            raw = asyncio.run(llm_client.resume_diagnosis(
                 parsed_text="Java 后端简历",
                 image_base64="synthetic-image",
                 image_mime_type="image/png",
-            )
+            ))
 
         result = ResumeDiagnosisResponse.model_validate_json(raw)
-        self.assertEqual(0, model.raw_calls)
+        self.assertEqual(1, model.raw_calls)
         self.assertEqual(1, len(model.structured_calls))
         self.assertTrue(result.disadvantages)
-        self.assertIn("普通诊断文本", result.suggestions[0])
+        self.assertIn("重新发起简历诊断", result.suggestions[0])
 
 
 class AsyncStructuredOutputContractTest(unittest.IsolatedAsyncioTestCase):

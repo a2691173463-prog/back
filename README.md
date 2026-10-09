@@ -81,6 +81,19 @@ npm run dev
 
 同一天的修改按本地时间（UTC+08:00）分节点追加；已有节点只保留，不覆盖。
 
+### 2026-10-09
+
+#### 20:40
+
+- 补齐异步链路：RabbitMQ 监听回调中的数据库读取与领取任务也交给有界执行器，避免监听线程等待 JDBC；增加该行为的自动化测试。
+- 使用最终构建再次预热并完成端到端验证：12/12 成功，单消费者 `prefetch=3`，模型最大并发 3，RabbitMQ Ready/Unacked 均为 0。与同步版预热结果相比，3.708 秒对 3.939 秒（异步版慢约 6.23%）；这是固定 750 ms Mock AI 的一次小样本测试，不代表真实模型环境的普遍性能结论。完整结果见 [简历 MQ 基准测试](back/benchmarks/README.md)。
+
+#### 20:15
+
+- 在 GitHub 分支 [`codex/backup-sync-resume-20261009`](https://github.com/a2691173463-prog/back/tree/codex/backup-sync-resume-20261009) 保存改造前的完整同步版本（提交 `0e8158f`）。
+- 简历解析改为一个 RabbitMQ 监听消费者、`prefetch=3`：PDF 处理交给有界线程池，Java 到 Python 使用异步 HTTP，Python 诊断端点使用异步模型调用；返回的 `CompletableFuture` 完成后才 ACK，失败仍走延迟重试或死信队列。
+- 新增 Java/Python 异步自动化测试及同步/异步同机 Mock AI 对比脚本。预热后 12 份简历：同步版 3.708 秒、异步版 3.727 秒，均 12/12 成功、模型最大并发 3；异步版 RabbitMQ Ready/Unacked 均为 0。另验证文件永久失败入 DLQ、模型前两次 503 后第三次重试成功。结果见 [简历 MQ 基准测试](back/benchmarks/README.md)。
+
 ### 2026-09-18
 
 #### 20:30

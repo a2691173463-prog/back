@@ -229,3 +229,17 @@ RABBITMQ_PASSWORD=guest
 需要主动说明：并发不是越高越好。生产环境应结合 Python 服务处理能力和模型 API
 限流逐步调节消费者数量，否则只是把 RabbitMQ 中的排队转移成 Python 或模型端的
 拥塞。
+
+## 8. 2026-10-09 异步调用链追加验证
+
+前述 3 消费者、`prefetch=1` 是已备份的同步版本配置，保存在 GitHub 分支
+`codex/backup-sync-resume-20261009`（提交 `0e8158f`）。新版本由一个消费者接收
+最多 3 条未确认消息，返回 `CompletableFuture`；PDF 处理使用有界线程池，Java
+异步请求 Python，Python 异步调用模型。模型结果写入 MySQL 后，监听容器才 ACK。
+
+同机、同一份 PDF、固定 750 ms Mock AI 的 12 任务预热后对照：同步版 3.708 秒，
+异步版 3.727 秒，均 12/12 成功、模型最大并发 3。异步版 RabbitMQ Ready/Unacked
+均为 0；缺失 PDF 的任务进入 DLQ 且不调用模型；模型前两次返回 503 时，第三次
+延迟重试成功。原系统已经能并发 3 路模型请求，因此这次改造的价值是释放监听
+线程并控制在途任务数，没有测得额外的吞吐提升。原始结果与自动对比脚本位于
+`back/benchmarks/results/*-20261009.json` 和 `back/benchmarks/compare_resume_mq_results.py`。

@@ -1,0 +1,22 @@
+{
+  "tasks": 12,
+  "syncElapsedSeconds": 3.708,
+  "asyncElapsedSeconds": 3.939,
+  "elapsedChangePercent": 6.23,
+  "syncThroughputTasksPerSecond": 3.236,
+  "asyncThroughputTasksPerSecond": 3.046,
+  "syncRabbitConsumers": 3,
+  "asyncRabbitConsumers": 1,
+  "syncPrefetch": [
+    1,
+    1,
+    1
+  ],
+  "asyncPrefetch": [
+    3
+  ],
+  "syncModelMaxConcurrency": 3,
+  "asyncModelMaxConcurrency": 3,
+  "asyncRabbitReady": 0,
+  "asyncRabbitUnacked": 0
+}

@@ -11,12 +11,16 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 @Slf4j
 @Component
@@ -27,109 +31,134 @@ public class ResumeMqConsumer {
     private final ResumeMapper resumeMapper;
     private final AiClient aiClient;
     private final ResumeMqProducer resumeMqProducer;
+    private final Executor resumeParseExecutor;
 
     public ResumeMqConsumer(
             ResumeMapper resumeMapper,
             AiClient aiClient,
-            ResumeMqProducer resumeMqProducer
+            ResumeMqProducer resumeMqProducer,
+            @Qualifier("resumeParseExecutor") Executor resumeParseExecutor
     ) {
         this.resumeMapper = resumeMapper;
         this.aiClient = aiClient;
         this.resumeMqProducer = resumeMqProducer;
+        this.resumeParseExecutor = resumeParseExecutor;
     }
 
     @RabbitListener(queues = RabbitMQConfig.RESUME_QUEUE)
-    public void handleResumeParseTask(
+    public CompletableFuture<Void> handleResumeParseTask(
             ResumeParseMessage task,
             @Header(name = AmqpHeaders.REDELIVERED, required = false) Boolean redelivered
     ) {
+        // JDBC is blocking; keep even the initial claim off the Rabbit listener thread.
+        // Spring AMQP acknowledges only after the returned future completes.
+        return CompletableFuture.supplyAsync(
+                () -> claimResume(task, redelivered), resumeParseExecutor
+        ).thenCompose(resume -> {
+            if (resume == null) {
+                return CompletableFuture.completedFuture(null);
+            }
+            CompletableFuture<Void> processing = CompletableFuture
+                    .supplyAsync(() -> preparePdf(resume, task), resumeParseExecutor)
+                    .thenCompose(parsed -> aiClient.diagnoseResumeAsync(
+                            parsed.text(), parsed.imageBase64(), "image/png"
+                    ).thenApply(result -> new DiagnosisPayload(parsed.text(), result)))
+                    .thenAcceptAsync(payload -> saveDiagnosis(resume, task, payload), resumeParseExecutor);
+
+            return processing.handle((ignored, error) -> {
+                if (error == null) {
+                    return null;
+                }
+                Throwable cause = unwrap(error);
+                if (cause instanceof AmqpRejectAndDontRequeueException reject) {
+                    throw reject;
+                }
+                handleTransientFailure(resume, task,
+                        cause instanceof Exception exception
+                                ? exception : new IllegalStateException(cause));
+                return null;
+            });
+        });
+    }
+
+    private Resume claimResume(ResumeParseMessage task, Boolean redelivered) {
         validateTask(task);
         Long resumeId = task.resumeId();
         log.info(
                 "Received resume parse task, messageId={}, resumeId={}, attempt={}, redelivered={}",
-                task.messageId(),
-                resumeId,
-                task.attempt(),
-                Boolean.TRUE.equals(redelivered)
+                task.messageId(), resumeId, task.attempt(), Boolean.TRUE.equals(redelivered)
         );
-
         Resume resume = resumeMapper.selectById(resumeId);
         if (resume == null) {
-            throw new AmqpRejectAndDontRequeueException(
-                    "Resume not found for ID: " + resumeId
-            );
+            throw new AmqpRejectAndDontRequeueException("Resume not found for ID: " + resumeId);
         }
         if (resume.getStatus() != null && (resume.getStatus() == 1 || resume.getStatus() == 2)) {
-            log.info(
-                    "Skipping terminal resume task, messageId={}, resumeId={}, status={}",
-                    task.messageId(),
-                    resumeId,
-                    resume.getStatus()
-            );
-            return;
+            log.info("Skipping terminal resume task, messageId={}, resumeId={}, status={}",
+                    task.messageId(), resumeId, resume.getStatus());
+            return null;
         }
-
         if (Integer.valueOf(3).equals(resume.getStatus()) && Boolean.TRUE.equals(redelivered)) {
             resumeMapper.releaseForRetry(resumeId);
         }
         if (resumeMapper.claimPending(resumeId) == 0) {
-            log.info(
-                    "Resume task already claimed by another consumer, messageId={}, resumeId={}",
-                    task.messageId(),
-                    resumeId
-            );
-            return;
+            log.info("Resume task already claimed by another consumer, messageId={}, resumeId={}",
+                    task.messageId(), resumeId);
+            return null;
         }
-
-        try {
-            File pdfFile = new File(resume.getFileUrl());
-            if (!pdfFile.exists()) {
-                failPermanently(resume, task, "File not found: " + resume.getFileUrl(), null);
-            }
-
-            String parsedText = parsePdfText(pdfFile, resume, task);
-            if (parsedText != null && parsedText.length() > 4000) {
-                parsedText = parsedText.substring(0, 4000);
-            }
-
-            String base64Image = renderFirstPage(pdfFile);
-            String aiResult = aiClient.diagnoseResume(parsedText, base64Image, "image/png");
-            aiResult = stripMarkdownFence(aiResult);
-            if (!JSONUtil.isTypeJSON(aiResult)) {
-                throw new IllegalStateException("Python agent returned invalid diagnosis JSON");
-            }
-
-            String extractedText;
-            try {
-                Map<String, Object> diagnosis = JSONUtil.toBean(aiResult, Map.class);
-                Object extracted = diagnosis.get("extracted_text");
-                extractedText = extracted == null ? "" : extracted.toString();
-            } catch (Exception e) {
-                throw new IllegalStateException("Failed to parse diagnosis JSON", e);
-            }
-
-            if (cn.hutool.core.util.StrUtil.isNotBlank(extractedText)
-                    && cn.hutool.core.util.StrUtil.isBlank(parsedText)) {
-                resume.setParsedContent(extractedText);
-            } else {
-                resume.setParsedContent(parsedText);
-            }
-
-            resume.setDiagnosisResult(aiResult);
-            resume.setStatus(1);
-            resumeMapper.updateById(resume);
-            log.info(
-                    "Resume parsed successfully, messageId={}, resumeId={}, attempt={}",
-                    task.messageId(),
-                    resumeId,
-                    task.attempt()
-            );
-        } catch (AmqpRejectAndDontRequeueException e) {
-            throw e;
-        } catch (Exception e) {
-            handleTransientFailure(resume, task, e);
-        }
+        return resume;
     }
+
+    private ParsedResume preparePdf(Resume resume, ResumeParseMessage task) {
+        File pdfFile = new File(resume.getFileUrl());
+        if (!pdfFile.exists()) {
+            failPermanently(resume, task, "File not found: " + resume.getFileUrl(), null);
+        }
+        String parsedText = parsePdfText(pdfFile, resume, task);
+        if (parsedText != null && parsedText.length() > 4000) {
+            parsedText = parsedText.substring(0, 4000);
+        }
+        return new ParsedResume(parsedText == null ? "" : parsedText, renderFirstPage(pdfFile));
+    }
+
+    private void saveDiagnosis(Resume resume, ResumeParseMessage task, DiagnosisPayload payload) {
+        String aiResult = stripMarkdownFence(payload.result());
+        if (!JSONUtil.isTypeJSON(aiResult)) {
+            throw new IllegalStateException("Python agent returned invalid diagnosis JSON");
+        }
+        String extractedText;
+        try {
+            Map<String, Object> diagnosis = JSONUtil.toBean(aiResult, Map.class);
+            Object extracted = diagnosis.get("extracted_text");
+            extractedText = extracted == null ? "" : extracted.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to parse diagnosis JSON", e);
+        }
+
+        if (cn.hutool.core.util.StrUtil.isNotBlank(extractedText)
+                && cn.hutool.core.util.StrUtil.isBlank(payload.parsedText())) {
+            resume.setParsedContent(extractedText);
+        } else {
+            resume.setParsedContent(payload.parsedText());
+        }
+        resume.setDiagnosisResult(aiResult);
+        resume.setStatus(1);
+        if (resumeMapper.updateById(resume) != 1) {
+            throw new IllegalStateException("Failed to save resume diagnosis for ID: " + task.resumeId());
+        }
+        log.info("Resume parsed successfully, messageId={}, resumeId={}, attempt={}",
+                task.messageId(), task.resumeId(), task.attempt());
+    }
+
+    private Throwable unwrap(Throwable error) {
+        while (error instanceof CompletionException && error.getCause() != null) {
+            error = error.getCause();
+        }
+        return error;
+    }
+
+    private record ParsedResume(String text, String imageBase64) {}
+
+    private record DiagnosisPayload(String parsedText, String result) {}
 
     private void validateTask(ResumeParseMessage task) {
         if (task == null || task.resumeId() == null || task.messageId() == null) {

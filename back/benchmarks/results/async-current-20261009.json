@@ -1,0 +1,19 @@
+{
+  "runId": "c4b587624289",
+  "messageFormat": "json-task",
+  "submissionMode": "direct",
+  "fileMode": "valid",
+  "tasks": 12,
+  "elapsedSeconds": 6.259,
+  "throughputTasksPerSecond": 1.917,
+  "success": 12,
+  "failed": 0,
+  "unfinished": 0,
+  "rabbitConsumers": 1,
+  "rabbitPrefetch": [
+    3
+  ],
+  "mockAiRequests": 12,
+  "mockAiMaxConcurrency": 3,
+  "deadLetterMessagesAdded": 0
+}
