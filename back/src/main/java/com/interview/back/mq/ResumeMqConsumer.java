@@ -9,9 +9,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+import org.springframework.amqp.ImmediateRequeueAmqpException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 @Slf4j
 @Component
@@ -52,33 +55,42 @@ public class ResumeMqConsumer {
     ) {
         // JDBC is blocking; keep even the initial claim off the Rabbit listener thread.
         // Spring AMQP acknowledges only after the returned future completes.
-        return CompletableFuture.supplyAsync(
-                () -> claimResume(task, redelivered), resumeParseExecutor
-        ).thenCompose(resume -> {
-            if (resume == null) {
-                return CompletableFuture.completedFuture(null);
-            }
-            CompletableFuture<Void> processing = CompletableFuture
-                    .supplyAsync(() -> preparePdf(resume, task), resumeParseExecutor)
-                    .thenCompose(parsed -> aiClient.diagnoseResumeAsync(
-                            parsed.text(), parsed.imageBase64(), "image/png"
-                    ).thenApply(result -> new DiagnosisPayload(parsed.text(), result)))
-                    .thenAcceptAsync(payload -> saveDiagnosis(resume, task, payload), resumeParseExecutor);
+        try {
+            return CompletableFuture.supplyAsync(
+                    () -> claimResume(task, redelivered), resumeParseExecutor
+            ).thenCompose(resume -> {
+                if (resume == null) {
+                    return CompletableFuture.<Void>completedFuture(null);
+                }
+                CompletableFuture<Void> processing = CompletableFuture
+                        .supplyAsync(() -> preparePdf(resume, task), resumeParseExecutor)
+                        .thenCompose(parsed -> aiClient.diagnoseResumeAsync(
+                                parsed.text(), parsed.imageBase64(), "image/png"
+                        ).thenApply(result -> new DiagnosisPayload(parsed.text(), result)))
+                        .thenAcceptAsync(payload -> saveDiagnosis(resume, task, payload), resumeParseExecutor);
 
-            return processing.handle((ignored, error) -> {
-                if (error == null) {
+                return processing.<Void>handle((ignored, error) -> {
+                    if (error == null) {
+                        return null;
+                    }
+                    Throwable cause = unwrap(error);
+                    if (cause instanceof AmqpRejectAndDontRequeueException reject) {
+                        throw reject;
+                    }
+                    if (isExecutorRejection(cause)) {
+                        throw requeueAfterExecutorRejection(cause, task);
+                    }
+                    handleTransientFailure(resume, task,
+                            cause instanceof Exception exception
+                                    ? exception : new IllegalStateException(cause));
                     return null;
-                }
-                Throwable cause = unwrap(error);
-                if (cause instanceof AmqpRejectAndDontRequeueException reject) {
-                    throw reject;
-                }
-                handleTransientFailure(resume, task,
-                        cause instanceof Exception exception
-                                ? exception : new IllegalStateException(cause));
-                return null;
-            });
-        });
+                });
+            }).exceptionallyCompose(error ->
+                    CompletableFuture.failedFuture(requeueIfExecutorRejected(error, task)));
+        } catch (RuntimeException error) {
+            // Spring AMQP requires an async result even if scheduling fails immediately.
+            return CompletableFuture.failedFuture(requeueIfExecutorRejected(error, task));
+        }
     }
 
     private Resume claimResume(ResumeParseMessage task, Boolean redelivered) {
@@ -154,6 +166,26 @@ public class ResumeMqConsumer {
             error = error.getCause();
         }
         return error;
+    }
+
+    private boolean isExecutorRejection(Throwable error) {
+        return error instanceof TaskRejectedException || error instanceof RejectedExecutionException;
+    }
+
+    private RuntimeException requeueIfExecutorRejected(Throwable error, ResumeParseMessage task) {
+        Throwable cause = unwrap(error);
+        if (isExecutorRejection(cause)) {
+            return requeueAfterExecutorRejection(cause, task);
+        }
+        return cause instanceof RuntimeException runtime ? runtime : new CompletionException(cause);
+    }
+
+    private ImmediateRequeueAmqpException requeueAfterExecutorRejection(
+            Throwable error, ResumeParseMessage task
+    ) {
+        log.warn("Resume parse executor rejected task; asking broker to requeue, messageId={}",
+                task == null ? null : task.messageId(), error);
+        return new ImmediateRequeueAmqpException("Resume parse executor unavailable", error);
     }
 
     private record ParsedResume(String text, String imageBase64) {}

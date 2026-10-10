@@ -9,11 +9,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+import org.springframework.amqp.ImmediateRequeueAmqpException;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -148,6 +152,52 @@ class ResumeMqConsumerTest {
             queuedWork.remove().run();
         }
         delivery.join();
+        assertThat(resume.getStatus()).isEqualTo(1);
+    }
+
+    @Test
+    void requeuesIfInitialClaimCannotBeScheduled() {
+        consumer = new ResumeMqConsumer(resumeMapper, aiClient, producer,
+                command -> { throw new RejectedExecutionException("pool stopped"); });
+
+        assertThatThrownBy(() -> consumer.handleResumeParseTask(message(0), false).join())
+                .isInstanceOf(CompletionException.class)
+                .hasCauseInstanceOf(ImmediateRequeueAmqpException.class);
+        verifyNoInteractions(resumeMapper, aiClient, producer);
+    }
+
+    @Test
+    void requeuesIfPdfStageCannotBeScheduledAfterClaim() {
+        AtomicInteger submissions = new AtomicInteger();
+        Executor rejectingSecondStage = command -> {
+            if (submissions.incrementAndGet() == 2) {
+                throw new RejectedExecutionException("pool full");
+            }
+            command.run();
+        };
+        consumer = new ResumeMqConsumer(resumeMapper, aiClient, producer, rejectingSecondStage);
+
+        assertThatThrownBy(() -> consumer.handleResumeParseTask(message(0), false).join())
+                .isInstanceOf(CompletionException.class)
+                .hasCauseInstanceOf(ImmediateRequeueAmqpException.class);
+        verify(resumeMapper).claimPending(7L);
+        verify(resumeMapper, never()).updateById(any(Resume.class));
+        verifyNoInteractions(aiClient, producer);
+    }
+
+    @Test
+    void redeliveryReleasesPreviouslyClaimedResume() {
+        resume.setStatus(3);
+        when(resumeMapper.releaseForRetry(7L)).thenReturn(1);
+        when(aiClient.diagnoseResumeAsync(any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("""
+                        {"extracted_text":"","advantages":[],"disadvantages":[],"suggestions":[]}
+                        """));
+
+        consumer.handleResumeParseTask(message(0), true).join();
+
+        verify(resumeMapper).releaseForRetry(7L);
+        verify(resumeMapper).claimPending(7L);
         assertThat(resume.getStatus()).isEqualTo(1);
     }
 

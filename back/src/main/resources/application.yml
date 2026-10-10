@@ -58,6 +58,8 @@ ai:
 
 mq:
   resume:
+    parse-executor-threads: 3
+    parse-executor-queue-capacity: 12
     publisher-max-attempts: 3
     confirm-timeout-seconds: 5
     outbox-max-attempts: 10
